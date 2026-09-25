@@ -1,0 +1,9 @@
+{
+  "name": "se-availability-finder",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"src/lib/**/*.test.js\"",
+    "dev": "npx serve -l 5173"
+  }
+}
