@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>SE Availability Finder — v1 prototype</title>
+		<!-- Google Identity Services: handles the "Sign in + allow calendar access" popup -->
+		<script src="https://accounts.google.com/gsi/client" async defer></script>
+		<!-- Archie SDK: provides archie.me() (who's signed in). 404s harmlessly on localhost. -->
+		<script src="/_platform/sdk.js"></script>
+		<style>
+			body {
+				font-family: system-ui, sans-serif;
+				max-width: 900px;
+				margin: 2rem auto;
+				padding: 0 1rem;
+			}
+			button {
+				padding: 0.6rem 1rem;
+				font-size: 1rem;
+				cursor: pointer;
+			}
+			.person {
+				border: 1px solid #ddd;
+				border-radius: 8px;
+				padding: 1rem;
+				margin: 1rem 0;
+			}
+			.everyone {
+				border-color: #2e7d32;
+				background: #f3faf3;
+			}
+			.error {
+				color: #b00020;
+			}
+			.muted {
+				color: #666;
+				font-size: 0.9rem;
+			}
+			h4 {
+				margin: 0.75rem 0 0.25rem;
+			}
+			ul {
+				margin: 0.25rem 0 0.75rem;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>SE Availability Finder</h1>
+		<p>
+			Step 1 prototype: sign in, then see free and busy times for you and both SEs (rest of today +
+			next 5 business days). Free times are within business hours in your local time zone.
+		</p>
+		<button id="connect">Connect Google Calendar</button>
+		<p id="status"></p>
+		<div id="results"></div>
+
+		<script>
+			// ---- CONFIG: fill these in ----
+			const CLIENT_ID = '521631312959-uasjdvfko1f9r50gk4d3emoilkisb147.apps.googleusercontent.com';
+			const SE_EMAILS = ['creinhardt@osano.com', 'john.allman@osano.com'];
+			const DEV_EMAIL = 'creinhardt@osano.com'; // only used when running locally
+			let ME; // filled in by getMe() when the user clicks Connect
+			const SCOPE = 'https://www.googleapis.com/auth/calendar.events.freebusy';
+			const BUSINESS_DAYS_AHEAD = 5;
+			const BUSINESS_HOURS = { start: 9, end: 17 }; // 9 AM – 5 PM, in the viewer's local time zone
+			const MIN_FREE_MINUTES = 30; // free gaps shorter than this are not worth showing
+			// --------------------------------
+
+			const MIN_FREE_MS = MIN_FREE_MINUTES * 60 * 1000;
+			const statusEl = document.getElementById('status');
+			const resultsEl = document.getElementById('results');
+			let tokenClient;
+
+			// Wait for the Google script to load, then set up the token client
+			window.addEventListener('load', () => {
+				tokenClient = google.accounts.oauth2.initTokenClient({
+					client_id: CLIENT_ID,
+					scope: SCOPE,
+					callback: (resp) => {
+						if (resp.error) return setStatus(`Auth failed: ${resp.error}`, true);
+						loadFreeBusy(resp.access_token); // token lives in memory only, never stored
+					},
+				});
+			});
+
+			document.getElementById('connect').addEventListener('click', () => {
+				tokenClient.requestAccessToken(); // opens Google's consent popup
+			});
+
+			async function loadFreeBusy(accessToken) {
+				setStatus('Loading availability…');
+				ME = await getMe();
+				const timeMin = new Date();
+				const timeMax = endOfBusinessDays(BUSINESS_DAYS_AHEAD, timeMin);
+
+				// Signed-in user + SEs, de-duplicated (Google collapses duplicate calendars anyway)
+				const ids = [...new Set([ME, ...SE_EMAILS])];
+
+				try {
+					const res = await fetch('https://www.googleapis.com/calendar/v3/freeBusy', {
+						method: 'POST',
+						headers: {
+							Authorization: `Bearer ${accessToken}`,
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify({
+							timeMin: timeMin.toISOString(),
+							timeMax: timeMax.toISOString(),
+							items: ids.map((id) => ({ id })),
+						}),
+					});
+					if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+					const data = await res.json();
+					render(ids, data.calendars, businessWindows(timeMin, timeMax));
+					setStatus('Done.');
+				} catch (err) {
+					setStatus(`FreeBusy request failed: ${err.message}`, true);
+				}
+			}
+
+			function render(ids, calendars, windows) {
+				resultsEl.replaceChildren();
+
+				// Pass 1: work out each person's free/busy intervals (or why we couldn't)
+				const people = ids.map((id) => {
+					const cal = calendars[id];
+					if (!cal) {
+						return { id, error: `No data returned for this ID. Returned keys: ${Object.keys(calendars).join(', ')}` };
+					}
+					// Per-calendar errors (e.g. "notFound" = sharing doesn't allow free/busy)
+					if (cal.errors?.length) {
+						return { id, error: `Couldn't read: ${cal.errors.map((e) => e.reason).join(', ')}` };
+					}
+					const busy = mergeIntervals((cal.busy ?? []).map((b) => ({ start: Date.parse(b.start), end: Date.parse(b.end) })));
+					return {
+						id,
+						busy: busy.filter((b) => windows.some((w) => overlaps(b, w))), // hide weekend-only blocks
+						free: subtractIntervals(windows, busy),
+					};
+				});
+
+				// Everyone-free section: intersect the free lists of everyone we could read
+				const readable = people.filter((p) => !p.error);
+				const unreadable = people.filter((p) => p.error);
+				const box = document.createElement('div');
+				box.className = 'person everyone';
+				box.append(Object.assign(document.createElement('h3'), { textContent: 'Times everyone is free' }));
+				if (readable.length === 0) {
+					box.append(Object.assign(document.createElement('p'), { className: 'error', textContent: 'No calendars could be read.' }));
+				} else {
+					const common = readable.map((p) => p.free).reduce(intersectIntervals);
+					box.append(intervalList(common, 'No shared free time of 30+ minutes in this window.'));
+					if (unreadable.length) {
+						box.append(
+							Object.assign(document.createElement('p'), {
+								className: 'muted',
+								textContent: `Not counting ${unreadable.map((p) => p.id).join(', ')} (calendar could not be read).`,
+							}),
+						);
+					}
+				}
+				resultsEl.append(box);
+
+				// Per-person sections
+				for (const p of people) {
+					const box = document.createElement('div');
+					box.className = 'person';
+					box.append(Object.assign(document.createElement('h3'), { textContent: p.id === ME ? `You (${p.id})` : p.id }));
+
+					if (p.error) {
+						box.append(Object.assign(document.createElement('p'), { className: 'error', textContent: p.error }));
+					} else {
+						box.append(Object.assign(document.createElement('h4'), { textContent: 'Free' }));
+						box.append(intervalList(p.free, 'No free time during business hours.'));
+						box.append(Object.assign(document.createElement('h4'), { textContent: 'Busy' }));
+						box.append(intervalList(p.busy, 'Wide open 🎉'));
+					}
+					resultsEl.append(box);
+				}
+			}
+
+			// A <ul> of formatted intervals, or a <p> with the fallback text if there are none
+			function intervalList(intervals, emptyText) {
+				if (!intervals.length) return Object.assign(document.createElement('p'), { textContent: emptyText });
+				const ul = document.createElement('ul');
+				for (const iv of intervals) {
+					ul.append(Object.assign(document.createElement('li'), { textContent: fmtRange(iv.start, iv.end) }));
+				}
+				return ul;
+			}
+
+			// ---- Interval math. Intervals are { start, end } in epoch ms, half-open [start, end). ----
+
+			// One window per business day between from and to, clipped to BUSINESS_HOURS and to [from, to)
+			function businessWindows(from, to) {
+				const windows = [];
+				const day = new Date(from);
+				day.setHours(0, 0, 0, 0);
+				for (; day < to; day.setDate(day.getDate() + 1)) {
+					if (isWeekend(day)) continue;
+					const open = new Date(day).setHours(BUSINESS_HOURS.start, 0, 0, 0);
+					const close = new Date(day).setHours(BUSINESS_HOURS.end, 0, 0, 0);
+					const start = Math.max(open, from);
+					const end = Math.min(close, to);
+					if (end - start >= MIN_FREE_MS) windows.push({ start, end });
+				}
+				return windows;
+			}
+
+			// Sort and merge overlapping/touching intervals
+			function mergeIntervals(intervals) {
+				const sorted = [...intervals].sort((a, b) => a.start - b.start);
+				const out = [];
+				for (const iv of sorted) {
+					const last = out[out.length - 1];
+					if (last && iv.start <= last.end) last.end = Math.max(last.end, iv.end);
+					else out.push({ ...iv });
+				}
+				return out;
+			}
+
+			// The parts of each window not covered by any busy interval (busy must be merged + sorted)
+			function subtractIntervals(windows, busy) {
+				const free = [];
+				for (const w of windows) {
+					let cursor = w.start;
+					for (const b of busy) {
+						if (b.end <= cursor) continue;
+						if (b.start >= w.end) break;
+						if (b.start > cursor) free.push({ start: cursor, end: b.start });
+						cursor = Math.max(cursor, b.end);
+						if (cursor >= w.end) break;
+					}
+					if (cursor < w.end) free.push({ start: cursor, end: w.end });
+				}
+				return free.filter((f) => f.end - f.start >= MIN_FREE_MS);
+			}
+
+			// Overlap of two sorted, non-overlapping interval lists
+			function intersectIntervals(a, b) {
+				const out = [];
+				let i = 0;
+				let j = 0;
+				while (i < a.length && j < b.length) {
+					const start = Math.max(a[i].start, b[j].start);
+					const end = Math.min(a[i].end, b[j].end);
+					if (end - start >= MIN_FREE_MS) out.push({ start, end });
+					if (a[i].end < b[j].end) i++;
+					else j++;
+				}
+				return out;
+			}
+
+			function overlaps(a, b) {
+				return a.start < b.end && b.start < a.end;
+			}
+
+			// Walk forward day by day, counting only Mon–Fri, until we've counted n.
+			// Returns midnight at the END of that day (timeMax is exclusive).
+			function endOfBusinessDays(n, from) {
+				const d = new Date(from);
+				let counted = 0;
+				while (counted < n) {
+					d.setDate(d.getDate() + 1);
+					if (!isWeekend(d)) counted++;
+				}
+				d.setHours(24, 0, 0, 0); // rolls over to 12:00 AM the next day
+				return d;
+			}
+
+			// On Archie: the signed-in viewer. Locally: no SDK, so fall back to DEV_EMAIL.
+			async function getMe() {
+				if (window.archie) return (await archie.me()).email;
+				return DEV_EMAIL;
+			}
+
+			function isWeekend(d) {
+				const day = d.getDay(); // 0 = Sun, 6 = Sat
+				return day === 0 || day === 6;
+			}
+
+			// "Mon Sep 28, 9:00 AM → 11:30 AM", or with the end date too if it lands on a different day
+			function fmtRange(start, end) {
+				const s = new Date(start);
+				const e = new Date(end);
+				return `${fmt(s)} → ${s.toDateString() === e.toDateString() ? fmt(e, true) : fmt(e)}`;
+			}
+
+			function fmt(d, timeOnly = false) {
+				return timeOnly
+					? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+					: d.toLocaleString([], {
+							weekday: 'short',
+							month: 'short',
+							day: 'numeric',
+							hour: 'numeric',
+							minute: '2-digit',
+						});
+			}
+
+			function setStatus(msg, isError = false) {
+				statusEl.textContent = msg;
+				statusEl.className = isError ? 'error' : '';
+			}
+		</script>
+	</body>
+</html>
