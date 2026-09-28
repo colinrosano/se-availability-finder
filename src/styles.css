@@ -664,3 +664,18 @@ h2 {
     grid-column: 1 / -1;
   }
 }
+
+/* ---- Booking outcome ---- */
+.notice-success {
+  background: #e9f9f1;
+  border-color: var(--green);
+}
+
+.notice a {
+  color: var(--purple);
+  font-weight: 600;
+}
+
+.btn-primary:disabled {
+  background: #b9a3ea;
+}

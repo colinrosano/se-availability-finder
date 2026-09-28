@@ -3,8 +3,13 @@
 // Google OAuth client (Web). Registered origins: http://localhost:5173 and the Archie origin.
 export const CLIENT_ID = '521631312959-uasjdvfko1f9r50gk4d3emoilkisb147.apps.googleusercontent.com';
 
-// Lets us read free/busy for other people's calendars (not just our own).
-export const SCOPE = 'https://www.googleapis.com/auth/calendar.events.freebusy';
+// Two scopes, space-separated (Project Plan §6):
+//  - calendar.events.freebusy: read free/busy for other people's calendars (not just our own)
+//  - calendar.events: create the app's own bookings on the AE's calendar (v1.5). Never used to read.
+export const SCOPE = [
+  'https://www.googleapis.com/auth/calendar.events.freebusy',
+  'https://www.googleapis.com/auth/calendar.events',
+].join(' ');
 
 // The full SE roster. Availability is always computed against everyone here.
 // (Admin-managed roster in the Archie config store is a later task; for now it lives in code.)

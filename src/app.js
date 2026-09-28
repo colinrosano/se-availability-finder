@@ -15,7 +15,8 @@ import {
   sesFreeFor,
 } from './lib/booking.js';
 import { pickSE } from './lib/assignment.js';
-import { readLedger } from './lib/ledger.js';
+import { readLedger, recordAssignment } from './lib/ledger.js';
+import { createEvent } from './lib/events.js';
 
 const PX_PER_MIN = 1; // grid scale: 1 minute = 1px → a 9-hour day is 540px tall
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -32,6 +33,8 @@ let minMinutes = readPref(); // doubles as the booking duration (Project Plan §
 let data = null; // last successful loadAvailability() result
 let ledger = []; // SE assignment ledger entries, for the fairness pick
 let picked = null; // { run, start } while the popover is open
+let bookingInFlight = false;
+let flash = null; // a notice that survives the next grid reload (e.g. "Booked ✓")
 
 // ---- Elements ----
 const $ = (id) => document.getElementById(id);
@@ -198,6 +201,7 @@ async function load() {
 function changeWeek(date) {
   weekOf = date;
   data = null;
+  flash = null;
   closePopover();
   renderWeekHeader();
   renderGridSkeleton();
@@ -359,8 +363,13 @@ function renderSummary(start, end) {
   // The title may say "Multi-Product"; the description (shown to the SE) always lists the modules.
   if (complete) box.append(row('Products', buildEventDescription(intake).replace(/^Products: /, '')));
   if (intake.dealUrl) box.append(row('Deal', intake.dealUrl));
-  const book = el('button', { className: 'btn btn-primary', type: 'button', textContent: 'Book', disabled: true });
-  book.title = 'Booking arrives in the next build step';
+
+  const canBook = complete && pick && !bookingInFlight;
+  const book = el('button', { className: 'btn btn-primary', type: 'button', disabled: !canBook });
+  book.textContent = bookingInFlight ? 'Booking…' : 'Book';
+  if (!complete) book.title = 'Complete the form above to book';
+  else if (!pick) book.title = 'No SE is free for this slot';
+  book.addEventListener('click', () => book_(start, end, pick.se, intake));
   box.append(book);
   return box;
 
@@ -369,6 +378,54 @@ function renderSummary(start, end) {
     r.append(el('span', { className: 'summary-label', textContent: label }), el('span', { className: muted ? 'muted' : '', textContent: value }));
     return r;
   }
+}
+
+/**
+ * Booking and ledger recording are one action (§11). Order: calendar event first, then the ledger.
+ * If the ledger write fails after the event exists, say exactly that rather than pretending.
+ */
+async function book_(start, end, se, intake) {
+  if (bookingInFlight) return;
+  bookingInFlight = true;
+  flash = null;
+  renderPopover();
+
+  const summary = buildEventTitle(intake);
+  const description = buildEventDescription(intake) + (intake.dealUrl ? `\nHubSpot deal: ${intake.dealUrl}` : '');
+  let event;
+  try {
+    event = await createEvent(accessToken, { summary, description, start, end, attendees: [me, se] });
+  } catch (err) {
+    bookingInFlight = false;
+    if (err.status === 401) {
+      clearToken();
+      setNotices([{ kind: 'warn', text: 'Your Google session expired before the event was created. Reconnect and book again.' }]);
+      closePopover();
+    } else {
+      renderPopover();
+      setNotices([{ kind: 'error', text: `${err.message} Nothing was booked.` }]);
+    }
+    return;
+  }
+
+  const when = `${new Date(start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}, ${fmtTime(start)} – ${fmtTime(end)}`;
+  try {
+    ledger = await recordAssignment(se);
+    flash = {
+      kind: 'success',
+      text: `Booked: ${summary} · ${when} with ${fullName(se)}. Invite sent.`,
+      link: { href: event.htmlLink, label: 'Open in Google Calendar' },
+    };
+  } catch (err) {
+    flash = {
+      kind: 'warn',
+      text: `Booked: ${summary} · ${when} with ${fullName(se)} — but the assignment could not be recorded in the fairness ledger (${err.message}).`,
+      link: { href: event.htmlLink, label: 'Open in Google Calendar' },
+    };
+  }
+  bookingInFlight = false;
+  closePopover();
+  await load(); // the new event now shows as busy time
 }
 
 /** Place the popover beside the clicked block, flipping left when it would overflow the grid. */
@@ -487,7 +544,7 @@ function renderWindows() {
 }
 
 function renderPeopleNotices() {
-  const notices = [];
+  const notices = flash ? [flash] : [];
   for (const p of data.people) {
     if (!p.error) continue;
     const isMe = p.id === data.me;
@@ -504,7 +561,11 @@ function renderPeopleNotices() {
 
 function setNotices(items) {
   els.notices.replaceChildren(
-    ...items.map((n) => el('div', { className: `notice notice-${n.kind}`, textContent: n.text })),
+    ...items.map((n) => {
+      const d = el('div', { className: `notice notice-${n.kind}`, textContent: n.text });
+      if (n.link) d.append(' ', el('a', { href: n.link.href, target: '_blank', rel: 'noopener', textContent: n.link.label }));
+      return d;
+    }),
   );
 }
 

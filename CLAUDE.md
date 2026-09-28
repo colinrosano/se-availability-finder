@@ -6,7 +6,7 @@ Internal web app for Osano AEs to find times when they and at least one Sales En
 - **v1 spike is done and verified** (`spike/index.html`): Google sign-in + FreeBusy works on localhost and Archie, tested by a non-SE.
 - **Data layer extracted** to `src/lib/` (plain ES modules, `npm test` runs `node:test` coverage). The spike is kept for reference only; do NOT port its layout or styles.
 - **Week-grid UI built** in `src/` (`index.html`, `app.js`, `styles.css`) on top of `src/lib/`. Local-verified; not yet deployed to Archie.
-- **v1.5 booking, first half built:** intake form (call type / product / duration / company), window click → start-time chips (`booking.js startTimes`, quarter-hour snap-up, 30-min step), assignment preview (`assignment.js pickSE` over the `ledger.js` entries). Chips are computed over the contiguous *run* of offerable segments and filtered by `sesFreeFor`, since a slot can span two labeled segments. **Not yet built:** event creation (`calendar.events` scope) and the ledger write; the Book button is disabled until then.
+- **v1.5 booking built (local-verified, not yet exercised against real Google):** intake form (call type / product / duration / company / optional HubSpot deal link), window click → start-time chips (`booking.js startTimes`, quarter-hour snap-up, 30-min step), auto-assigned SE (`assignment.js pickSE` over the `ledger.js` entries), Book → `events.js createEvent` on the AE's primary calendar with the SE invited (`sendUpdates=all`), then `recordAssignment`. Event first, ledger second; a ledger failure after the event exists is reported, never hidden. Chips are computed over the contiguous *run* of offerable segments and filtered by `sesFreeFor`, since a slot can span two labeled segments. Title uses the three-band rule; the exact modules (and the deal link, if given) go in the event description.
 - **Offerable = AE free ∩ (one SE free)**, computed per SE and split into segments labeled with the available SEs (`computeAvailability` → `offerable[{start,end,ses}]`). Never intersect the AE with the *union* of SE free time; two SEs' short gaps must not combine into one window.
 
 ## Canonical docs
@@ -36,7 +36,7 @@ If a decision is settled in the Project Plan, follow it rather than reopening it
 
 ## Google setup (already configured — don't change without asking)
 - GCP project under the Osano org; Calendar API enabled; consent screen audience **Internal**.
-- Scope: `https://www.googleapis.com/auth/calendar.events.freebusy` (NOT `calendar.freebusy`, which only covers the user's own calendars).
+- Scopes: `calendar.events.freebusy` (NOT `calendar.freebusy`, which only covers the user's own calendars) plus, since v1.5, `calendar.events` for creating the app's own bookings. Never used to read events. Adding the second scope made everyone re-consent once.
 - OAuth client (Web): `521631312959-uasjdvfko1f9r50gk4d3emoilkisb147.apps.googleusercontent.com`. Not a secret. No client secret, no redirect URIs.
 - Authorized JS origins: `http://localhost:5173` and the Archie origin.
 - Auth: Google Identity Services token client. Access token lives in memory only (~1 hr), never stored.
@@ -59,5 +59,5 @@ If a decision is settled in the Project Plan, follow it rather than reopening it
 
 ## Phases
 1. **v1** — Read from Google Calendar: availability week-grid (built, local-verified; remaining: Archie pilot deploy, admin-managed roster/business hours)
-2. **v1.5** — Write to Google Calendar: intake form + booking + SE assignment ledger
+2. **v1.5** — Write to Google Calendar: intake form + booking + SE assignment ledger (built; needs a real-calendar test, then the Archie pilot)
 3. **v2** — HubSpot integration
