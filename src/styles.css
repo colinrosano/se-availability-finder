@@ -1,0 +1,427 @@
+/* Osano brand palette */
+:root {
+  --purple: #7a3ff1;
+  --light-violet: #f0e7fa;
+  --gray: #5f5867;
+  --dark: #0e0416;
+  --dark-blue: #180d43;
+  --green: #37cd8f;
+  --yellow: #eeb155;
+  --error: #f04438;
+  --warning: #f79009;
+  --line: #e6dff0;
+  --bg: #ffffff;
+  --radius: 8px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* The hidden attribute must win over any display rule below (e.g. the grid overlay). */
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: var(--dark);
+  background: var(--bg);
+  line-height: 1.4;
+}
+
+h1,
+h2 {
+  margin: 0;
+  font-weight: 700;
+}
+
+/* ---- Top bar ---- */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--dark-blue);
+  color: #fff;
+}
+
+.topbar-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.topbar h1 {
+  font-size: 1.1rem;
+}
+
+.brand-mark {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--purple);
+  box-shadow: 0 0 0 3px rgba(122, 63, 241, 0.35);
+}
+
+.topbar-status {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.as-of {
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+/* ---- Buttons ---- */
+.btn {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: transparent;
+  color: inherit;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--purple);
+  outline-offset: 2px;
+}
+
+.btn-primary {
+  background: var(--purple);
+  color: #fff;
+  font-weight: 600;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #6a33d9;
+}
+
+.btn-ghost {
+  border-color: currentColor;
+}
+
+.topbar .btn-ghost {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.page .btn-ghost {
+  color: var(--purple);
+  border-color: var(--purple);
+}
+
+.btn-icon {
+  width: 2.2rem;
+  padding: 0.35rem 0;
+  font-size: 1.25rem;
+  line-height: 1;
+  color: var(--purple);
+  border-color: var(--line);
+}
+
+.btn-icon:hover,
+.page .btn-ghost:hover {
+  background: var(--light-violet);
+}
+
+/* ---- Page + controls ---- */
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.25rem 1.5rem 2rem;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.week-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.week-label {
+  font-size: 1.15rem;
+  margin-left: 0.5rem;
+}
+
+.jump input {
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--gray);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.3rem 0.5rem;
+  margin-left: 0.5rem;
+}
+
+.duration {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  color: var(--gray);
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--purple);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.seg {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.8rem;
+  border: 0;
+  background: #fff;
+  color: var(--purple);
+  cursor: pointer;
+}
+
+.seg + .seg {
+  border-left: 1px solid var(--purple);
+}
+
+.seg[aria-pressed='true'] {
+  background: var(--purple);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ---- Notices ---- */
+.notices:empty {
+  display: none;
+}
+
+.notice {
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+  border-left: 4px solid;
+}
+
+.notice-warn {
+  background: #fff7ea;
+  border-color: var(--warning);
+}
+
+.notice-error {
+  background: #fdecea;
+  border-color: var(--error);
+}
+
+/* ---- Grid ---- */
+.grid-wrap {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #fff;
+}
+
+.grid-header,
+.grid-body {
+  display: grid;
+  grid-template-columns: 56px repeat(5, 1fr);
+}
+
+.grid-header {
+  border-bottom: 1px solid var(--line);
+  background: var(--light-violet);
+}
+
+.day-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.55rem 0;
+  border-left: 1px solid var(--line);
+}
+
+.day-name {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gray);
+}
+
+.day-num {
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.day-head.is-today .day-num {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 50%;
+  background: var(--purple);
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+.grid-body {
+  position: relative;
+}
+
+.axis {
+  position: relative;
+}
+
+.axis-label {
+  position: absolute;
+  right: 8px;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  color: var(--gray);
+}
+
+.day-col {
+  position: relative;
+  border-left: 1px solid var(--line);
+}
+
+.day-col.is-today {
+  background: #faf7fe;
+}
+
+.hour-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--line);
+}
+
+.past {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(95, 88, 103, 0.06) 0 6px,
+    transparent 6px 12px
+  );
+  pointer-events: none;
+}
+
+.window {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 8px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--purple);
+  color: #fff;
+  border: 1px solid #fff;
+  box-shadow: 0 1px 2px rgba(14, 4, 22, 0.15);
+}
+
+.window-time {
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.window-ses {
+  font-size: 0.78rem;
+  opacity: 0.92;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.window.is-short {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+}
+
+.window.is-short .window-ses::before {
+  content: '· ';
+}
+
+/* ---- Overlay states ---- */
+.grid-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  padding: 2rem;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(1px);
+  color: var(--dark);
+}
+
+.grid-overlay[hidden] {
+  display: none;
+}
+
+.grid-overlay p {
+  margin: 0.25rem 0;
+}
+
+.muted {
+  color: var(--gray);
+  font-size: 0.9rem;
+}
+
+.error {
+  color: var(--error);
+}
+
+/* ---- Footer ---- */
+.footnote {
+  margin-top: 0.9rem;
+  font-size: 0.82rem;
+  color: var(--gray);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .grid-header,
+  .grid-body {
+    grid-template-columns: 44px repeat(5, 1fr);
+  }
+
+  .window-ses {
+    display: none;
+  }
+}

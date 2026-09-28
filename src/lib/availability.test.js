@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeAvailability } from './availability.js';
+import { computeAvailability, labelSegments } from './availability.js';
 
 // One business window: Wed 2026-09-23, 9 AM – 5 PM local.
 const t = (h, m = 0) => new Date(2026, 8, 23, h, m).getTime();
 const windows = [{ start: t(9), end: t(17) }];
 const iso = (h, m = 0) => new Date(t(h, m)).toISOString();
 const busy = (...ranges) => ({ busy: ranges.map(([s, e]) => ({ start: iso(...s), end: iso(...e) })) });
+const MIN = 60_000;
 
 const AE = 'ae@osano.com';
 const SE1 = 'se1@osano.com';
@@ -30,18 +31,56 @@ test('busy blocks outside business windows are hidden from busy but still not fr
   assert.deepEqual(people[0].free, windows);
 });
 
-test('offerable = AE free ∩ (any SE free)', () => {
+test('offerable segments are labeled with the SEs free in each', () => {
   const calendars = {
     [AE]: busy([[9], [10]]), // free 10–17
     [SE1]: busy([[10], [14]]), // free 9–10, 14–17
     [SE2]: busy([[12], [17]]), // free 9–12
   };
   const { offerable } = computeAvailability([AE, SE1, SE2], calendars, windows);
-  // SE union: 9–12, 14–17. ∩ AE 10–17 → 10–12, 14–17
   assert.deepEqual(offerable, [
-    { start: t(10), end: t(12) },
-    { start: t(14), end: t(17) },
+    { start: t(10), end: t(12), ses: [SE2] },
+    { start: t(14), end: t(17), ses: [SE1] },
   ]);
+});
+
+test('segments split where the set of free SEs changes, and merge where it does not', () => {
+  const calendars = {
+    [AE]: { busy: [] },
+    [SE1]: busy([[11], [17]]), // free 9–11
+    [SE2]: busy([[9], [10]], [[12], [17]]), // free 10–12
+  };
+  const { offerable } = computeAvailability([AE, SE1, SE2], calendars, windows);
+  assert.deepEqual(offerable, [
+    { start: t(9), end: t(10), ses: [SE1] },
+    { start: t(10), end: t(11), ses: [SE1, SE2] },
+    { start: t(11), end: t(12), ses: [SE2] },
+  ]);
+});
+
+test('one SE per call: adjacent short gaps from different SEs do NOT combine into a window', () => {
+  const calendars = {
+    [AE]: { busy: [] },
+    [SE1]: busy([[9], [10]], [[10, 20], [17]]), // free 10:00–10:20 only
+    [SE2]: busy([[9], [10, 20]], [[10, 40], [17]]), // free 10:20–10:40 only
+  };
+  const { offerable } = computeAvailability([AE, SE1, SE2], calendars, windows, { minMs: 30 * MIN });
+  assert.deepEqual(offerable, []);
+});
+
+test('minMs applies per SE: a 60-min filter drops a 45-min overlap', () => {
+  const calendars = {
+    [AE]: { busy: [] },
+    [SE1]: busy([[9], [10]], [[10, 45], [17]]), // free 10:00–10:45
+    [SE2]: busy([[9], [13]], [[15], [17]]), // free 13:00–15:00
+  };
+  const at30 = computeAvailability([AE, SE1, SE2], calendars, windows, { minMs: 30 * MIN }).offerable;
+  const at60 = computeAvailability([AE, SE1, SE2], calendars, windows, { minMs: 60 * MIN }).offerable;
+  assert.deepEqual(at30, [
+    { start: t(10), end: t(10, 45), ses: [SE1] },
+    { start: t(13), end: t(15), ses: [SE2] },
+  ]);
+  assert.deepEqual(at60, [{ start: t(13), end: t(15), ses: [SE2] }]);
 });
 
 test('missing calendar key is an error, not free', () => {
@@ -59,7 +98,7 @@ test('per-calendar errors (e.g. notFound) are surfaced and excluded from offerab
   };
   const { people, offerable } = computeAvailability([AE, SE1, SE2], calendars, windows);
   assert.match(people[1].error, /notFound/);
-  assert.deepEqual(offerable, windows); // SE2 is wide open
+  assert.deepEqual(offerable, [{ start: t(9), end: t(17), ses: [SE2] }]); // SE2 is wide open
 });
 
 test('unreadable AE calendar yields no offerable windows', () => {
@@ -72,4 +111,10 @@ test('AE who is also an SE (deduped to a single id) gets no offerable windows', 
   const calendars = { [AE]: { busy: [] } };
   const { offerable } = computeAvailability([AE], calendars, windows);
   assert.deepEqual(offerable, []);
+});
+
+test('labelSegments: empty input, and touching intervals with the same SE merge', () => {
+  assert.deepEqual(labelSegments([]), []);
+  const seg = labelSegments([{ id: SE1, intervals: [{ start: 0, end: 10 }, { start: 10, end: 20 }] }]);
+  assert.deepEqual(seg, [{ start: 0, end: 20, ses: [SE1] }]);
 });

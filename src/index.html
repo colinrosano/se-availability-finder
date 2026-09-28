@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SE Availability Finder</title>
+    <!-- Google Identity Services: the "Connect Google Calendar" consent popup. Exposes `google`. -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <!-- Archie SDK: exposes `archie.me()` (signed-in viewer). 404s harmlessly on localhost. -->
+    <script src="/_platform/sdk.js"></script>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-title">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <h1>SE Availability Finder</h1>
+      </div>
+      <div class="topbar-status">
+        <span id="as-of" class="as-of"></span>
+        <button id="refresh" class="btn btn-ghost" type="button" hidden>Refresh</button>
+        <button id="connect" class="btn btn-primary" type="button">Connect Google Calendar</button>
+      </div>
+    </header>
+
+    <main class="page">
+      <section class="controls" aria-label="View controls">
+        <div class="week-nav">
+          <button id="prev-week" class="btn btn-icon" type="button" aria-label="Previous week">‹</button>
+          <button id="this-week" class="btn btn-ghost" type="button">This week</button>
+          <button id="next-week" class="btn btn-icon" type="button" aria-label="Next week">›</button>
+          <h2 id="week-label" class="week-label"></h2>
+          <label class="jump">
+            <span class="visually-hidden">Jump to week containing</span>
+            <input id="jump-date" type="date" />
+          </label>
+        </div>
+        <div class="duration" role="group" aria-label="Minimum meeting length">
+          <span class="duration-label">Show windows of at least</span>
+          <div id="duration-options" class="segmented"></div>
+        </div>
+      </section>
+
+      <div id="notices" class="notices" aria-live="polite"></div>
+
+      <section class="grid-wrap">
+        <div id="grid" class="grid" aria-label="Weekly availability"></div>
+        <div id="grid-overlay" class="grid-overlay" hidden></div>
+      </section>
+
+      <p class="footnote">
+        Shows times when you and at least one Sales Engineer are free, within business hours
+        (<span id="hours-label"></span>), in your local time zone (<span id="tz-label"></span>).
+        Only free/busy status is read; never event details.
+      </p>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

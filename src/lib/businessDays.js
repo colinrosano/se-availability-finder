@@ -1,6 +1,8 @@
 // Business-day math. All calculations use the viewer's local time zone.
 import { BUSINESS_HOURS, MIN_FREE_MS } from './config.js';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 /** 0 = Sun, 6 = Sat */
 export function isWeekend(d) {
   const day = d.getDay();
@@ -8,18 +10,33 @@ export function isWeekend(d) {
 }
 
 /**
- * Walk forward day by day from `from`, counting only Mon–Fri, until n days are counted.
- * Returns a Date at midnight at the END of that day (so it works as an exclusive timeMax).
+ * The Mon–Fri week containing `date`, as local-midnight Dates:
+ * start = Monday 00:00, end = Saturday 00:00 (exclusive). Sunday belongs to the week just ended.
  */
-export function endOfBusinessDays(n, from) {
-  const d = new Date(from);
-  let counted = 0;
-  while (counted < n) {
-    d.setDate(d.getDate() + 1);
-    if (!isWeekend(d)) counted++;
-  }
-  d.setHours(24, 0, 0, 0); // rolls over to 12:00 AM the next day
+export function weekBounds(date) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7)); // back to Monday
+  const end = new Date(start);
+  end.setDate(end.getDate() + 5); // Saturday 00:00
+  return { start, end };
+}
+
+/**
+ * The week an AE most likely wants to see "now": this week on a weekday,
+ * next week on a weekend (this week's business days are already over).
+ */
+export function defaultWeekOf(now = new Date()) {
+  const d = new Date(now);
+  const day = d.getDay();
+  if (day === 6) d.setDate(d.getDate() + 2);
+  else if (day === 0) d.setDate(d.getDate() + 1);
   return d;
+}
+
+/** Shift a date by whole weeks (for prev/next navigation). */
+export function addWeeks(date, n) {
+  return new Date(+date + n * 7 * DAY_MS);
 }
 
 /**
@@ -34,8 +51,8 @@ export function businessWindows(from, to, { hours = BUSINESS_HOURS, minMs = MIN_
   day.setHours(0, 0, 0, 0);
   for (; day < toMs; day.setDate(day.getDate() + 1)) {
     if (isWeekend(day)) continue;
-    const open = new Date(day).setHours(hours.start, 0, 0, 0);
-    const close = new Date(day).setHours(hours.end, 0, 0, 0);
+    const open = new Date(day).setHours(hours.start[0], hours.start[1], 0, 0);
+    const close = new Date(day).setHours(hours.end[0], hours.end[1], 0, 0);
     const start = Math.max(open, fromMs);
     const end = Math.min(close, toMs);
     if (end - start >= minMs) windows.push({ start, end });

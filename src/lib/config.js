@@ -7,17 +7,23 @@ export const CLIENT_ID = '521631312959-uasjdvfko1f9r50gk4d3emoilkisb147.apps.goo
 export const SCOPE = 'https://www.googleapis.com/auth/calendar.events.freebusy';
 
 // The full SE roster. Availability is always computed against everyone here.
-export const SE_EMAILS = ['creinhardt@osano.com', 'john.allman@osano.com'];
+// (Admin-managed roster in the Archie config store is a later task; for now it lives in code.)
+export const SE_ROSTER = [
+  { email: 'creinhardt@osano.com', name: 'Colin Reinhardt' },
+  { email: 'john.allman@osano.com', name: 'John Allman' },
+];
+export const SE_EMAILS = SE_ROSTER.map((se) => se.email);
 
 // Identity used when running locally (no Archie SDK available).
 export const DEV_EMAIL = 'creinhardt@osano.com';
 
-// Window = rest of today + this many Mon–Fri days.
-export const BUSINESS_DAYS_AHEAD = 5;
+// Business hours as [hour, minute], in the viewer's local time zone.
+// v1 ships with a fixed 8:30 AM – 5:30 PM window (Project Plan / backlog item 9).
+export const BUSINESS_HOURS = { start: [8, 30], end: [17, 30] };
 
-// 9 AM – 5 PM in the viewer's local time zone.
-export const BUSINESS_HOURS = { start: 9, end: 17 };
+// Minimum slot lengths the AE can filter by (minutes). The first is the default.
+export const DURATION_OPTIONS = [30, 45, 60];
 
 // Free gaps shorter than this are not worth showing.
-export const MIN_FREE_MINUTES = 30;
+export const MIN_FREE_MINUTES = DURATION_OPTIONS[0];
 export const MIN_FREE_MS = MIN_FREE_MINUTES * 60 * 1000;

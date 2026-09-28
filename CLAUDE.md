@@ -4,8 +4,9 @@ Internal web app for Osano AEs to find times when they and at least one Sales En
 
 ## Current status
 - **v1 spike is done and verified** (`spike/index.html`): Google sign-in + FreeBusy works on localhost and Archie, tested by a non-SE.
-- **The spike's UI is being thrown away.** The real design doesn't exist yet. Do NOT port the spike's layout, cards, or styles.
-- **Current task:** extract the spike's non-UI logic into `src/lib/` so a new UI can be built on top of it.
+- **Data layer extracted** to `src/lib/` (plain ES modules, `npm test` runs `node:test` coverage). The spike is kept for reference only; do NOT port its layout or styles.
+- **Week-grid UI built** in `src/` (`index.html`, `app.js`, `styles.css`) on top of `src/lib/`. Local-verified; not yet deployed to Archie.
+- **Offerable = AE free ∩ (one SE free)**, computed per SE and split into segments labeled with the available SEs (`computeAvailability` → `offerable[{start,end,ses}]`). Never intersect the AE with the *union* of SE free time; two SEs' short gaps must not combine into one window.
 
 ## Canonical docs
 - Project Plan (source of truth for design decisions): https://app.notion.com/p/3b5af0df2a53818c924ee69027bd24b1
@@ -23,7 +24,7 @@ If a decision is settled in the Project Plan, follow it rather than reopening it
 - **Vanilla HTML/CSS/JS. No framework, no build step.** Don't introduce React, Vite, or a bundler.
 - `src/lib/` is plain ES modules with **no DOM code**; the UI imports them via `<script type="module">`.
 - Multi-file app → publish to Archie as a zip with `index.html` at the root.
-- Local dev: `npx serve -l 5173`, open via `http://localhost:5173` (not 127.0.0.1 — OAuth origin must match exactly).
+- Local dev: `npm run dev` (serves `src/` on 5173), open `http://localhost:5173` (not 127.0.0.1 — OAuth origin must match exactly).
 
 ## Archie platform rules
 - Upload is a single `index.html` or a zip with `index.html` at the root. Use **relative asset URLs**; never hard-code host, slug, or path.
@@ -43,7 +44,7 @@ If a decision is settled in the Project Plan, follow it rather than reopening it
 - Never query `"primary"` alongside email IDs — Google collapses duplicate calendars and returns only one key. Query everyone by email, deduped: `[...new Set([ME, ...SE_EMAILS])]`.
 - A calendar ID missing from the FreeBusy response is an **error**, not "free."
 - A `notFound` error on a calendar means a sharing setting, not a code bug.
-- `timeMax` is exclusive. Window = rest of today + next 5 business days (Mon–Fri).
+- `timeMax` is exclusive. Window = one Mon–Fri week (`weekBounds`), from max(now, Monday) to Saturday 00:00. Business hours 8:30–17:30 in the viewer's local zone (fixed for v1).
 - `origin_mismatch` = page origin not registered on the OAuth client. `invalid_client` = wrong/placeholder Client ID or a brand-new client (wait ~5 min).
 
 ## Config
@@ -55,6 +56,6 @@ If a decision is settled in the Project Plan, follow it rather than reopening it
 - One SE per call.
 
 ## Phases
-1. **v1** — Read from Google Calendar: availability week-grid (in progress: data layer done, UI pending design)
+1. **v1** — Read from Google Calendar: availability week-grid (built, local-verified; remaining: Archie pilot deploy, admin-managed roster/business hours)
 2. **v1.5** — Write to Google Calendar: intake form + booking + SE assignment ledger
 3. **v2** — HubSpot integration

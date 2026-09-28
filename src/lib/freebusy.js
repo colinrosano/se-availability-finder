@@ -8,6 +8,7 @@ const FREEBUSY_URL = 'https://www.googleapis.com/calendar/v3/freeBusy';
  *   timeMax is exclusive. ids are calendar IDs (emails); never mix in "primary".
  * @returns {Promise<Record<string, { busy?: {start:string,end:string}[], errors?: {reason:string}[] }>>}
  *   Keyed by calendar ID. A missing key is an error, not "free".
+ * @throws {Error & { status?: number }}  Non-2xx responses carry the HTTP status (401 = token expired).
  */
 export async function fetchFreeBusy(accessToken, { timeMin, timeMax, ids }) {
   const uniqueIds = [...new Set(ids)];
@@ -23,7 +24,11 @@ export async function fetchFreeBusy(accessToken, { timeMin, timeMax, ids }) {
       items: uniqueIds.map((id) => ({ id })),
     }),
   });
-  if (!res.ok) throw new Error(`FreeBusy request failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) {
+    const err = new Error(`FreeBusy request failed: ${res.status} ${await res.text()}`);
+    err.status = res.status;
+    throw err;
+  }
   const data = await res.json();
   return data.calendars ?? {};
 }
