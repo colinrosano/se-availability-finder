@@ -48,6 +48,7 @@ const els = {
   products: $('products'),
   durations: $('duration-options'),
   company: $('company'),
+  dealUrl: $('deal-url'),
   titlePreview: $('title-preview'),
   notices: $('notices'),
   grid: $('grid'),
@@ -82,6 +83,7 @@ els.jump.addEventListener('change', () => {
 });
 els.callType.addEventListener('change', onIntakeChange);
 els.company.addEventListener('input', onIntakeChange);
+els.dealUrl.addEventListener('input', onIntakeChange);
 els.products.addEventListener('change', onProductChange);
 document.addEventListener('keydown', (e) => e.key === 'Escape' && closePopover());
 // Clicks inside the popover never reach the document (a chip click re-renders the popover, which
@@ -265,6 +267,8 @@ function readIntake() {
     productKeys: normalizeProducts([...els.products.querySelectorAll('input:checked')].map((b) => b.value)),
     durationMin: minMinutes,
     companyName: els.company.value,
+    // Optional in v1.5; becomes required and drives company name + Deal Collaborator in v2 (§12).
+    dealUrl: els.dealUrl.value.trim(),
   };
 }
 
@@ -354,6 +358,7 @@ function renderSummary(start, end) {
   box.append(row('Title', complete ? buildEventTitle(intake) : 'Complete the form above to set the title', !complete));
   // The title may say "Multi-Product"; the description (shown to the SE) always lists the modules.
   if (complete) box.append(row('Products', buildEventDescription(intake).replace(/^Products: /, '')));
+  if (intake.dealUrl) box.append(row('Deal', intake.dealUrl));
   const book = el('button', { className: 'btn btn-primary', type: 'button', textContent: 'Book', disabled: true });
   book.title = 'Booking arrives in the next build step';
   box.append(book);
