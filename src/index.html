@@ -19,9 +19,36 @@
       <div class="topbar-status">
         <span id="as-of" class="as-of"></span>
         <button id="refresh" class="btn btn-ghost" type="button" hidden>Refresh</button>
+        <button id="settings" class="btn btn-ghost" type="button" hidden>Settings</button>
         <button id="connect" class="btn btn-primary" type="button">Connect Google Calendar</button>
       </div>
     </header>
+
+    <!-- Admin only (see ADMIN_EMAILS in lib/config.js): SE roster + business hours. -->
+    <dialog id="settings-dialog" class="settings" aria-labelledby="settings-title">
+      <form method="dialog" id="settings-form">
+        <h2 id="settings-title">Settings</h2>
+        <section>
+          <h3>SE roster</h3>
+          <p class="muted">Availability is always checked against everyone here. Removing an SE keeps their booking history.</p>
+          <div id="roster-rows" class="roster-rows"></div>
+          <button id="roster-add" class="btn btn-ghost btn-small" type="button">+ Add SE</button>
+        </section>
+        <section>
+          <h3>Business hours</h3>
+          <p class="muted">Quarter-hour times, in each viewer's local time zone.</p>
+          <div class="hours-row">
+            <label>Start <input id="hours-start" type="time" step="900" required /></label>
+            <label>End <input id="hours-end" type="time" step="900" required /></label>
+          </div>
+        </section>
+        <div id="settings-errors" class="settings-errors" aria-live="polite"></div>
+        <div class="settings-actions">
+          <button id="settings-cancel" class="btn btn-ghost" type="button">Cancel</button>
+          <button id="settings-save" class="btn btn-primary" type="button">Save</button>
+        </div>
+      </form>
+    </dialog>
 
     <main class="page">
       <section class="controls" aria-label="View controls">

@@ -679,3 +679,110 @@ h2 {
 .btn-primary:disabled {
   background: #b9a3ea;
 }
+
+/* ---- Settings dialog (admin) ---- */
+.settings {
+  width: min(560px, calc(100vw - 2rem));
+  padding: 1.25rem 1.5rem;
+  border: 0;
+  border-radius: var(--radius);
+  box-shadow: 0 16px 48px rgba(14, 4, 22, 0.3);
+  color: var(--dark);
+}
+
+.settings::backdrop {
+  background: rgba(24, 13, 67, 0.45);
+}
+
+.settings h2 {
+  font-size: 1.15rem;
+  margin-bottom: 0.75rem;
+}
+
+.settings h3 {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--purple);
+  margin: 1rem 0 0.15rem;
+}
+
+.settings section > .muted {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+}
+
+.settings input {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--dark);
+  min-width: 0;
+}
+
+.roster-rows {
+  display: grid;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.roster-row {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr auto;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.roster-remove {
+  font: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  border: 0;
+  background: transparent;
+  color: var(--gray);
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+}
+
+.roster-remove:hover {
+  color: var(--error);
+}
+
+.btn-small {
+  font-size: 0.82rem;
+  padding: 0.3rem 0.7rem;
+}
+
+.hours-row {
+  display: flex;
+  gap: 1rem;
+}
+
+.hours-row label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.settings-errors:empty {
+  display: none;
+}
+
+.settings-errors {
+  margin-top: 0.9rem;
+  padding: 0.5rem 0.75rem;
+  border-left: 4px solid var(--error);
+  background: #fdecea;
+  font-size: 0.85rem;
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.1rem;
+}

@@ -7,6 +7,7 @@ Internal web app for Osano AEs to find times when they and at least one Sales En
 - **Data layer extracted** to `src/lib/` (plain ES modules, `npm test` runs `node:test` coverage). The spike is kept for reference only; do NOT port its layout or styles.
 - **Week-grid UI built** in `src/` (`index.html`, `app.js`, `styles.css`) on top of `src/lib/`. Local-verified; not yet deployed to Archie.
 - **v1.5 booking built (local-verified, not yet exercised against real Google):** intake form (call type / product / duration / company / optional HubSpot deal link), window click → start-time chips (`booking.js startTimes`, quarter-hour snap-up, 30-min step), auto-assigned SE (`assignment.js pickSE` over the `ledger.js` entries), Book → `events.js createEvent` on the AE's primary calendar with the SE invited (`sendUpdates=all`), then `recordAssignment`. Event first, ledger second; a ledger failure after the event exists is reported, never hidden. Chips are computed over the contiguous *run* of offerable segments and filtered by `sesFreeFor`, since a slot can span two labeled segments. Title uses the three-band rule; the exact modules (and the deal link, if given) go in the event description.
+- **Admin settings built:** SE roster + business hours live in the app store (`settings.js`, key `config:settings`, via `store.js` = `archie.kv` on Archie / localStorage locally). `config.js` values are the seed and fallback. Settings load before the first FreeBusy fetch. The Settings button shows only for `ADMIN_EMAILS` (Colin) — a UI gate, not a security boundary. Removing an SE keeps their ledger history.
 - **Offerable = AE free ∩ (one SE free)**, computed per SE and split into segments labeled with the available SEs (`computeAvailability` → `offerable[{start,end,ses}]`). Never intersect the AE with the *union* of SE free time; two SEs' short gaps must not combine into one window.
 
 ## Canonical docs
@@ -50,7 +51,8 @@ If a decision is settled in the Project Plan, follow it rather than reopening it
 - `origin_mismatch` = page origin not registered on the OAuth client. `invalid_client` = wrong/placeholder Client ID or a brand-new client (wait ~5 min).
 
 ## Config
-- SEs: `creinhardt@osano.com`, `john.allman@osano.com`
+- Default SEs: `creinhardt@osano.com`, `john.allman@osano.com` (live roster is admin-editable in the app; see settings.js)
+- Admin: `creinhardt@osano.com`
 - Local-dev fallback identity: `creinhardt@osano.com`
 
 ## Locked product decisions
@@ -58,6 +60,6 @@ If a decision is settled in the Project Plan, follow it rather than reopening it
 - One SE per call.
 
 ## Phases
-1. **v1** — Read from Google Calendar: availability week-grid (built, local-verified; remaining: Archie pilot deploy, admin-managed roster/business hours)
+1. **v1** — Read from Google Calendar: availability week-grid + admin settings (built, local-verified; remaining: Archie pilot deploy)
 2. **v1.5** — Write to Google Calendar: intake form + booking + SE assignment ledger (built; needs a real-calendar test, then the Archie pilot)
 3. **v2** — HubSpot integration

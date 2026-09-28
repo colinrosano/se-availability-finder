@@ -11,19 +11,23 @@ export const SCOPE = [
   'https://www.googleapis.com/auth/calendar.events',
 ].join(' ');
 
-// The full SE roster. Availability is always computed against everyone here.
-// (Admin-managed roster in the Archie config store is a later task; for now it lives in code.)
+// Default SE roster. Availability is always computed against the whole roster. Admins can edit
+// the live roster in the app (stored in the Archie config store, see settings.js); this is the
+// seed and the fallback when nothing is stored.
 export const SE_ROSTER = [
   { email: 'creinhardt@osano.com', name: 'Colin Reinhardt' },
   { email: 'john.allman@osano.com', name: 'John Allman' },
 ];
 export const SE_EMAILS = SE_ROSTER.map((se) => se.email);
 
+// Who may open the Settings panel (roster + business hours). A UI gate, not a security boundary.
+export const ADMIN_EMAILS = ['creinhardt@osano.com'];
+
 // Identity used when running locally (no Archie SDK available).
 export const DEV_EMAIL = 'creinhardt@osano.com';
 
-// Business hours as [hour, minute], in the viewer's local time zone.
-// v1 ships with a fixed 8:30 AM – 5:30 PM window (Project Plan / backlog item 9).
+// Default business hours as [hour, minute], in the viewer's local time zone (admin-editable, as
+// above). v1 ships with 8:30 AM – 5:30 PM (Project Plan / backlog item 9).
 export const BUSINESS_HOURS = { start: [8, 30], end: [17, 30] };
 
 // Minimum slot lengths the AE can filter by (minutes). The first is the default.

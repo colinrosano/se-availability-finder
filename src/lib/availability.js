@@ -1,5 +1,5 @@
 // Turns FreeBusy results into per-person free/busy lists and the windows an AE can offer.
-import { SE_EMAILS, MIN_FREE_MS } from './config.js';
+import { SE_ROSTER, BUSINESS_HOURS, MIN_FREE_MS } from './config.js';
 import { getMe } from './auth.js';
 import { fetchFreeBusy } from './freebusy.js';
 import { businessWindows, weekBounds, defaultWeekOf } from './businessDays.js';
@@ -89,16 +89,20 @@ function sameSet(a, b) {
  * max(now, Monday) to Saturday 00:00, and compute availability.
  *
  * @param {string} accessToken  From requestAccessToken() in auth.js
- * @param {{ weekOf?: Date, now?: Date, minMs?: number }} [opts]
+ * @param {{ weekOf?: Date, now?: Date, minMs?: number, roster?: {email:string}[], hours?: {start:number[], end:number[]} }} [opts]
  *   weekOf: any date in the week to show (default: this week, or next week on a weekend).
+ *   roster/hours: the admin-managed settings (see settings.js); default to the config.js seeds.
  */
-export async function loadAvailability(accessToken, { weekOf, now = new Date(), minMs } = {}) {
+export async function loadAvailability(
+  accessToken,
+  { weekOf, now = new Date(), minMs, roster = SE_ROSTER, hours = BUSINESS_HOURS } = {},
+) {
   const me = await getMe();
   const { start: weekStart, end: weekEnd } = weekBounds(weekOf ?? defaultWeekOf(now));
   const timeMin = new Date(Math.max(+now, +weekStart));
   // AE first, then SEs, deduped (the AE may themselves be an SE).
-  const ids = [...new Set([me, ...SE_EMAILS])];
-  const windows = businessWindows(timeMin, weekEnd);
+  const ids = [...new Set([me, ...roster.map((se) => se.email)])];
+  const windows = businessWindows(timeMin, weekEnd, { hours });
 
   let calendars = {};
   if (windows.length) {

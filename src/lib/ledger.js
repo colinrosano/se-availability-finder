@@ -1,37 +1,13 @@
 // SE assignment ledger: who was assigned, and when. Aggregate scheduling metadata only —
 // no meeting content, no prospect data — so it is allowed in the Archie config store.
-// On Archie: archie.kv (shared across all AEs). On localhost: browser storage, so the flow
-// can be exercised without the platform. No DOM code.
+// Lives in the shared app store (see store.js). No DOM code.
+import { kvStore as store } from './store.js';
 
 export const LEDGER_KEY = 'ledger:assignments';
 export const LEDGER_RETENTION_DAYS = 60;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** @typedef {{ se: string, at: string }} LedgerEntry  at = ISO timestamp */
-
-function store() {
-  const kv = globalThis.archie?.kv;
-  if (kv) return kv;
-  // Local fallback with the same get/set shape.
-  const ls = globalThis.localStorage;
-  return {
-    async get(key) {
-      try {
-        const raw = ls?.getItem(key);
-        return raw == null ? null : JSON.parse(raw);
-      } catch {
-        return null;
-      }
-    },
-    async set(key, value) {
-      try {
-        ls?.setItem(key, JSON.stringify(value));
-      } catch {
-        /* private mode etc. */
-      }
-    },
-  };
-}
 
 /** All retained entries, oldest first. Never throws; an unreadable ledger reads as empty. */
 export async function readLedger() {

@@ -1,5 +1,6 @@
 // UI for the week grid and booking intake. All DOM code lives here; the data layer is in ./lib/.
-import { SE_ROSTER, BUSINESS_HOURS, DURATION_OPTIONS } from './lib/config.js';
+import { DURATION_OPTIONS } from './lib/config.js';
+import { loadSettings, saveSettings, defaultSettings, isAdmin } from './lib/settings.js';
 import { requestAccessToken, getMe } from './lib/auth.js';
 import { loadAvailability, computeAvailability } from './lib/availability.js';
 import { weekBounds, defaultWeekOf, addWeeks } from './lib/businessDays.js';
@@ -35,6 +36,8 @@ let ledger = []; // SE assignment ledger entries, for the fairness pick
 let picked = null; // { run, start } while the popover is open
 let bookingInFlight = false;
 let flash = null; // a notice that survives the next grid reload (e.g. "Booked ✓")
+let settings = defaultSettings(); // roster + business hours; replaced by the stored value at boot
+let nameByEmail = new Map();
 
 // ---- Elements ----
 const $ = (id) => document.getElementById(id);
@@ -59,14 +62,23 @@ const els = {
   popover: $('popover'),
   hoursLabel: $('hours-label'),
   tzLabel: $('tz-label'),
+  settingsBtn: $('settings'),
+  dialog: $('settings-dialog'),
+  rosterRows: $('roster-rows'),
+  rosterAdd: $('roster-add'),
+  hoursStart: $('hours-start'),
+  hoursEnd: $('hours-end'),
+  settingsErrors: $('settings-errors'),
+  settingsCancel: $('settings-cancel'),
+  settingsSave: $('settings-save'),
 };
 
-const nameByEmail = new Map(SE_ROSTER.map((se) => [se.email, se.name]));
 const fullName = (email) => nameByEmail.get(email) ?? email;
 const firstName = (email) => fullName(email).split(' ')[0];
+const hours = () => settings.businessHours;
 
 // ---- Boot ----
-els.hoursLabel.textContent = `${fmtClock(...BUSINESS_HOURS.start)} – ${fmtClock(...BUSINESS_HOURS.end)}`;
+applySettings(settings);
 els.tzLabel.textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
 renderIntakeForm();
 renderWeekHeader();
@@ -88,6 +100,10 @@ els.callType.addEventListener('change', onIntakeChange);
 els.company.addEventListener('input', onIntakeChange);
 els.dealUrl.addEventListener('input', onIntakeChange);
 els.products.addEventListener('change', onProductChange);
+els.settingsBtn.addEventListener('click', openSettings);
+els.rosterAdd.addEventListener('click', () => addRosterRow());
+els.settingsCancel.addEventListener('click', () => els.dialog.close());
+els.settingsSave.addEventListener('click', saveSettingsFromDialog);
 document.addEventListener('keydown', (e) => e.key === 'Escape' && closePopover());
 // Clicks inside the popover never reach the document (a chip click re-renders the popover, which
 // would otherwise detach the target and make the "outside" check below close it).
@@ -107,7 +123,10 @@ document.addEventListener('click', (e) => {
 async function bootAuth() {
   els.connect.disabled = true;
   try {
-    me = await getMe();
+    // Settings first: the roster decides whose calendars the first fetch asks for.
+    [me, settings] = await Promise.all([getMe(), loadSettings()]);
+    applySettings(settings);
+    els.settingsBtn.hidden = !isAdmin(me);
     setToken(await requestAccessToken({ silent: true, hint: me }));
     await load();
   } catch (err) {
@@ -176,7 +195,12 @@ async function load() {
   els.refresh.disabled = true;
   try {
     [data, ledger] = await Promise.all([
-      loadAvailability(accessToken, { weekOf, minMs: minMinutes * 60_000 }),
+      loadAvailability(accessToken, {
+        weekOf,
+        minMs: minMinutes * 60_000,
+        roster: settings.roster,
+        hours: settings.businessHours,
+      }),
       readLedger(),
     ]);
     els.asOf.textContent = `As of ${fmtTime(data.fetchedAt)}`;
@@ -221,6 +245,71 @@ function changeDuration(minutes) {
   });
   data = { ...data, people, offerable, seFree };
   renderWindows();
+}
+
+// ---- Settings (admin) ----
+
+/** Make the loaded settings the live ones: names for labels, hours for the grid and footer. */
+function applySettings(s) {
+  settings = s;
+  nameByEmail = new Map(s.roster.map((se) => [se.email, se.name]));
+  els.hoursLabel.textContent = `${fmtClock(...s.businessHours.start)} – ${fmtClock(...s.businessHours.end)}`;
+}
+
+function openSettings() {
+  els.rosterRows.replaceChildren();
+  for (const se of settings.roster) addRosterRow(se);
+  els.hoursStart.value = toTimeInputValue(settings.businessHours.start);
+  els.hoursEnd.value = toTimeInputValue(settings.businessHours.end);
+  els.settingsErrors.replaceChildren();
+  els.dialog.showModal();
+}
+
+function addRosterRow({ name = '', email = '' } = {}) {
+  const row = el('div', { className: 'roster-row' });
+  const nameIn = el('input', { type: 'text', value: name, placeholder: 'Name', ariaLabel: 'SE name', autocomplete: 'off' });
+  const emailIn = el('input', { type: 'email', value: email, placeholder: 'email@osano.com', ariaLabel: 'SE email', autocomplete: 'off' });
+  const remove = el('button', { className: 'roster-remove', type: 'button', textContent: '×', ariaLabel: `Remove ${name || 'SE'}` });
+  remove.addEventListener('click', () => row.remove());
+  row.append(nameIn, emailIn, remove);
+  els.rosterRows.append(row);
+  if (!name && !email) nameIn.focus();
+}
+
+function readSettingsDialog() {
+  const roster = [...els.rosterRows.querySelectorAll('.roster-row')].map((row) => {
+    const [nameIn, emailIn] = row.querySelectorAll('input');
+    return { name: nameIn.value, email: emailIn.value };
+  });
+  return {
+    roster,
+    businessHours: { start: fromTimeInputValue(els.hoursStart.value), end: fromTimeInputValue(els.hoursEnd.value) },
+  };
+}
+
+async function saveSettingsFromDialog() {
+  els.settingsSave.disabled = true;
+  try {
+    const saved = await saveSettings(readSettingsDialog());
+    applySettings(saved);
+    els.dialog.close();
+    flash = { kind: 'success', text: 'Settings saved. Availability now uses the updated roster and hours.' };
+    if (data) await load();
+    else renderGridSkeleton();
+  } catch (err) {
+    els.settingsErrors.replaceChildren(...(err.problems ?? [err.message]).map((p) => el('div', { textContent: p })));
+  } finally {
+    els.settingsSave.disabled = false;
+  }
+}
+
+function toTimeInputValue([h, m]) {
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function fromTimeInputValue(v) {
+  const [h, m] = String(v ?? '').split(':').map(Number);
+  return [h, m];
 }
 
 // ---- Intake form ----
@@ -456,8 +545,8 @@ function renderWeekHeader() {
 /** Time axis, five day columns with hour lines, today highlight, past shading. Windows come later. */
 function renderGridSkeleton() {
   const { start } = weekBounds(weekOf);
-  const dayStartMin = BUSINESS_HOURS.start[0] * 60 + BUSINESS_HOURS.start[1];
-  const dayEndMin = BUSINESS_HOURS.end[0] * 60 + BUSINESS_HOURS.end[1];
+  const dayStartMin = hours().start[0] * 60 + hours().start[1];
+  const dayEndMin = hours().end[0] * 60 + hours().end[1];
   const height = (dayEndMin - dayStartMin) * PX_PER_MIN;
   const now = new Date();
   const todayKey = now.toDateString();
@@ -500,8 +589,8 @@ function renderGridSkeleton() {
       col.append(line);
     }
     // Shade the part of the day that is already gone.
-    const dayStart = new Date(d).setHours(BUSINESS_HOURS.start[0], BUSINESS_HOURS.start[1], 0, 0);
-    const dayEnd = new Date(d).setHours(BUSINESS_HOURS.end[0], BUSINESS_HOURS.end[1], 0, 0);
+    const dayStart = new Date(d).setHours(hours().start[0], hours().start[1], 0, 0);
+    const dayEnd = new Date(d).setHours(hours().end[0], hours().end[1], 0, 0);
     if (now > dayStart) {
       const past = el('div', { className: 'past' });
       past.style.height = `${((Math.min(+now, dayEnd) - dayStart) / 60_000) * PX_PER_MIN}px`;
@@ -518,7 +607,7 @@ function renderWindows() {
   closePopover();
   renderGridSkeleton();
   const cols = new Map([...els.grid.querySelectorAll('.day-col')].map((c) => [c.dataset.day, c]));
-  const dayStartMin = BUSINESS_HOURS.start[0] * 60 + BUSINESS_HOURS.start[1];
+  const dayStartMin = hours().start[0] * 60 + hours().start[1];
 
   for (const w of data.offerable) {
     const s = new Date(w.start);
