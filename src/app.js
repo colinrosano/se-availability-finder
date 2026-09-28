@@ -15,7 +15,7 @@ import {
   startTimes,
   sesFreeFor,
 } from './lib/booking.js';
-import { pickSE } from './lib/assignment.js';
+import { pickSE, ledgerStats } from './lib/assignment.js';
 import { readLedger, recordAssignment } from './lib/ledger.js';
 import { createEvent } from './lib/events.js';
 
@@ -71,6 +71,8 @@ const els = {
   settingsErrors: $('settings-errors'),
   settingsCancel: $('settings-cancel'),
   settingsSave: $('settings-save'),
+  statsBody: $('stats-table').querySelector('tbody'),
+  statsNext: $('stats-next'),
 };
 
 const fullName = (email) => nameByEmail.get(email) ?? email;
@@ -256,13 +258,42 @@ function applySettings(s) {
   els.hoursLabel.textContent = `${fmtClock(...s.businessHours.start)} – ${fmtClock(...s.businessHours.end)}`;
 }
 
-function openSettings() {
+async function openSettings() {
   els.rosterRows.replaceChildren();
   for (const se of settings.roster) addRosterRow(se);
   els.hoursStart.value = toTimeInputValue(settings.businessHours.start);
   els.hoursEnd.value = toTimeInputValue(settings.businessHours.end);
   els.settingsErrors.replaceChildren();
+  renderStats([]); // placeholder while the ledger loads
   els.dialog.showModal();
+  ledger = await readLedger(); // fresh each time the panel opens
+  renderStats(ledger);
+}
+
+/** Booking statistics from the ledger: per-SE counts, last assigned, and the rule's next pick. */
+function renderStats(entries) {
+  const { rows, total, nextPick } = ledgerStats(entries, settings.roster);
+  els.statsBody.replaceChildren(
+    ...rows.map((r) => {
+      const tr = el('tr');
+      const who = el('td', { textContent: r.name });
+      if (!r.onRoster) who.append(' ', el('span', { className: 'muted', textContent: '(removed from roster)' }));
+      tr.append(
+        who,
+        el('td', { textContent: String(r.recentCount) }),
+        el('td', { textContent: String(r.totalCount) }),
+        el('td', { textContent: r.lastAt ? new Date(r.lastAt).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'never' }),
+      );
+      return tr;
+    }),
+  );
+  const totalLine = `${total} booking${total === 1 ? '' : 's'} in the last 60 days.`;
+  const nextLine = !nextPick
+    ? ''
+    : nextPick.tie
+      ? ' Next pick if everyone is free: tie (random).'
+      : ` Next pick if everyone is free: ${fullName(nextPick.se)}.`;
+  els.statsNext.textContent = totalLine + nextLine;
 }
 
 function addRosterRow({ name = '', email = '' } = {}) {

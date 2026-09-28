@@ -35,6 +35,17 @@
           <button id="roster-add" class="btn btn-ghost btn-small" type="button">+ Add SE</button>
         </section>
         <section>
+          <h3>Booking statistics</h3>
+          <p class="muted">Assignments made via this tool only — not total workload. The fairness rule counts the last 14 days.</p>
+          <table id="stats-table" class="stats">
+            <thead>
+              <tr><th>SE</th><th>Last 14 days</th><th>Last 60 days</th><th>Last assigned</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <p id="stats-next" class="stats-next"></p>
+        </section>
+        <section>
           <h3>Business hours</h3>
           <p class="muted">Quarter-hour times, in each viewer's local time zone.</p>
           <div class="hours-row">

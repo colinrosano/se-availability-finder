@@ -790,3 +790,39 @@ h2 {
   gap: 0.5rem;
   margin-top: 1.1rem;
 }
+
+/* ---- Booking statistics (settings) ---- */
+.stats {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.stats th,
+.stats td {
+  text-align: left;
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.stats th {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gray);
+}
+
+.stats td:nth-child(2),
+.stats td:nth-child(3),
+.stats th:nth-child(2),
+.stats th:nth-child(3) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-next {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+  color: var(--gray);
+}
