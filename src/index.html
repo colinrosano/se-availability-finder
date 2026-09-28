@@ -4,6 +4,15 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SE Availability Finder</title>
+    <!-- Apply the theme before first paint: stored preference, else the OS preference. -->
+    <script>
+      (function () {
+        var t = null;
+        try { t = localStorage.getItem('seaf.theme'); } catch (e) {}
+        if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', t);
+      })();
+    </script>
     <!-- Google Identity Services: the "Connect Google Calendar" consent popup. Exposes `google`. -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <!-- Archie SDK: exposes `archie.me()` (signed-in viewer). 404s harmlessly on localhost. -->
@@ -20,6 +29,7 @@
         <span id="as-of" class="as-of"></span>
         <button id="refresh" class="btn btn-ghost" type="button" hidden>Refresh</button>
         <button id="settings" class="btn btn-ghost" type="button" hidden>Settings</button>
+        <button id="theme" class="btn btn-theme" type="button" aria-label="Switch to dark mode" title="Switch to dark mode">☾</button>
         <button id="connect" class="btn btn-primary" type="button">Connect Google Calendar</button>
       </div>
     </header>

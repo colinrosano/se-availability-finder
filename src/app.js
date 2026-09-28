@@ -67,6 +67,7 @@ const els = {
   hoursLabel: $('hours-label'),
   tzLabel: $('tz-label'),
   settingsBtn: $('settings'),
+  themeBtn: $('theme'),
   dialog: $('settings-dialog'),
   rosterRows: $('roster-rows'),
   rosterAdd: $('roster-add'),
@@ -84,6 +85,7 @@ const firstName = (email) => fullName(email).split(' ')[0];
 const hours = () => settings.businessHours;
 
 // ---- Boot ----
+initTheme();
 applySettings(settings);
 els.tzLabel.textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
 renderIntakeForm();
@@ -254,6 +256,49 @@ function changeDuration(minutes) {
   });
   data = { ...data, people, offerable, seFree };
   renderWindows();
+}
+
+// ---- Theme ----
+// The inline script in index.html already applied html[data-theme] before first paint
+// (stored preference, else OS preference). This wires the toggle and follows OS changes
+// until the user picks one explicitly.
+const THEME_KEY = 'seaf.theme';
+
+function initTheme() {
+  renderThemeButton();
+  els.themeBtn.addEventListener('click', () => {
+    const next = currentTheme() === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try {
+      localStorage.setItem(THEME_KEY, next);
+    } catch {
+      /* preference just won't persist */
+    }
+    renderThemeButton();
+  });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+    let stored = null;
+    try {
+      stored = localStorage.getItem(THEME_KEY);
+    } catch {
+      /* ignore */
+    }
+    if (stored === 'light' || stored === 'dark') return; // explicit choice wins
+    document.documentElement.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+    renderThemeButton();
+  });
+}
+
+function currentTheme() {
+  return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+}
+
+function renderThemeButton() {
+  const dark = currentTheme() === 'dark';
+  els.themeBtn.textContent = dark ? '☀' : '☾';
+  const label = dark ? 'Switch to light mode' : 'Switch to dark mode';
+  els.themeBtn.setAttribute('aria-label', label);
+  els.themeBtn.title = label;
 }
 
 // ---- Copy available times ----
