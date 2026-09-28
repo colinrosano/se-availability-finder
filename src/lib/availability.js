@@ -14,9 +14,12 @@ import { mergeIntervals, subtractIntervals, intersectIntervals, overlaps } from 
  * @param {{ minMs?: number }} [opts]  Minimum meeting length; a window must fit a call with ONE SE.
  * @returns {{
  *   people: Array<{ id: string, error?: string, busy?: Interval[], free?: Interval[] }>,
- *   offerable: Array<{ start: number, end: number, ses: string[] }>
+ *   offerable: Array<{ start: number, end: number, ses: string[] }>,
  *     // AE free AND at least one SE free for >= minMs (locked product rule: one SE per call).
  *     // Split wherever the set of available SEs changes, so each segment is labeled accurately.
+ *   seFree: Record<string, Interval[]>
+ *     // Each readable SE's overlap with the AE (>= minMs). Lets the UI check who is free for
+ *     // one specific slot, which may span two labeled segments (see booking.js sesFreeFor).
  * }}
  */
 export function computeAvailability(ids, calendars, windows, { minMs = MIN_FREE_MS } = {}) {
@@ -41,15 +44,17 @@ export function computeAvailability(ids, calendars, windows, { minMs = MIN_FREE_
 
   const [ae, ...others] = people;
   let offerable = [];
+  const seFree = {};
   if (ae && !ae.error) {
     // Each SE's overlap with the AE, individually long enough for a call with that one SE.
     const perSe = others
       .filter((p) => !p.error)
       .map((p) => ({ id: p.id, intervals: intersectIntervals(ae.free, p.free, minMs) }));
+    for (const p of perSe) seFree[p.id] = p.intervals;
     offerable = labelSegments(perSe);
   }
 
-  return { people, offerable };
+  return { people, offerable, seFree };
 }
 
 /**
@@ -102,6 +107,6 @@ export async function loadAvailability(accessToken, { weekOf, now = new Date(), 
     // Week is entirely in the past: nothing to fetch, everyone trivially has no windows.
     for (const id of ids) calendars[id] = { busy: [] };
   }
-  const { people, offerable } = computeAvailability(ids, calendars, windows, { minMs });
-  return { me, ids, weekStart, weekEnd, timeMin, windows, calendars, people, offerable, fetchedAt: now };
+  const { people, offerable, seFree } = computeAvailability(ids, calendars, windows, { minMs });
+  return { me, ids, weekStart, weekEnd, timeMin, windows, calendars, people, offerable, seFree, fetchedAt: now };
 }

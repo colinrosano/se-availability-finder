@@ -50,12 +50,24 @@ test('segments split where the set of free SEs changes, and merge where it does 
     [SE1]: busy([[11], [17]]), // free 9–11
     [SE2]: busy([[9], [10]], [[12], [17]]), // free 10–12
   };
-  const { offerable } = computeAvailability([AE, SE1, SE2], calendars, windows);
+  const { offerable, seFree } = computeAvailability([AE, SE1, SE2], calendars, windows);
   assert.deepEqual(offerable, [
     { start: t(9), end: t(10), ses: [SE1] },
     { start: t(10), end: t(11), ses: [SE1, SE2] },
     { start: t(11), end: t(12), ses: [SE2] },
   ]);
+  // Per-SE overlap with the AE is exposed unsplit, for slot-level "who is free" checks.
+  assert.deepEqual(seFree, {
+    [SE1]: [{ start: t(9), end: t(11) }],
+    [SE2]: [{ start: t(10), end: t(12) }],
+  });
+});
+
+test('seFree excludes unreadable SEs and is empty when the AE is unreadable', () => {
+  const a = computeAvailability([AE, SE1, SE2], { [AE]: { busy: [] }, [SE1]: { errors: [{ reason: 'notFound' }] }, [SE2]: { busy: [] } }, windows);
+  assert.deepEqual(Object.keys(a.seFree), [SE2]);
+  const b = computeAvailability([AE, SE1], { [AE]: { errors: [{ reason: 'notFound' }] }, [SE1]: { busy: [] } }, windows);
+  assert.deepEqual(b.seFree, {});
 });
 
 test('one SE per call: adjacent short gaps from different SEs do NOT combine into a window', () => {

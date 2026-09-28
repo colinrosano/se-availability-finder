@@ -1,18 +1,37 @@
-// UI for the week grid. All DOM code lives here; the data layer is in ./lib/.
+// UI for the week grid and booking intake. All DOM code lives here; the data layer is in ./lib/.
 import { SE_ROSTER, BUSINESS_HOURS, DURATION_OPTIONS } from './lib/config.js';
-import { requestAccessToken } from './lib/auth.js';
+import { requestAccessToken, getMe } from './lib/auth.js';
 import { loadAvailability, computeAvailability } from './lib/availability.js';
 import { weekBounds, defaultWeekOf, addWeeks } from './lib/businessDays.js';
+import {
+  PRODUCTS,
+  CALL_TYPES,
+  MODULES,
+  normalizeProducts,
+  buildEventTitle,
+  buildEventDescription,
+  isIntakeComplete,
+  startTimes,
+  sesFreeFor,
+} from './lib/booking.js';
+import { pickSE } from './lib/assignment.js';
+import { readLedger } from './lib/ledger.js';
 
 const PX_PER_MIN = 1; // grid scale: 1 minute = 1px → a 9-hour day is 540px tall
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 const PREF_KEY = 'seaf.minMinutes';
+const RENEW_BEFORE_EXPIRY_MS = 10 * 60_000; // silent renewal ~50 min into a 60-min token
+const RENEW_MIN_DELAY_MS = 30_000;
 
 // ---- State (all in memory; the access token is never stored) ----
 let accessToken = null;
+let me = null; // viewer email from Archie SSO (or the dev fallback); used as the Google account hint
+let renewTimer = null;
 let weekOf = defaultWeekOf(new Date());
-let minMinutes = readPref();
+let minMinutes = readPref(); // doubles as the booking duration (Project Plan §11)
 let data = null; // last successful loadAvailability() result
+let ledger = []; // SE assignment ledger entries, for the fairness pick
+let picked = null; // { run, start } while the popover is open
 
 // ---- Elements ----
 const $ = (id) => document.getElementById(id);
@@ -25,24 +44,31 @@ const els = {
   thisWeek: $('this-week'),
   weekLabel: $('week-label'),
   jump: $('jump-date'),
+  callType: $('call-type'),
+  products: $('products'),
   durations: $('duration-options'),
+  company: $('company'),
+  titlePreview: $('title-preview'),
   notices: $('notices'),
   grid: $('grid'),
   overlay: $('grid-overlay'),
+  popover: $('popover'),
   hoursLabel: $('hours-label'),
   tzLabel: $('tz-label'),
 };
 
 const nameByEmail = new Map(SE_ROSTER.map((se) => [se.email, se.name]));
-const firstName = (email) => (nameByEmail.get(email) ?? email.split('@')[0]).split(' ')[0];
+const fullName = (email) => nameByEmail.get(email) ?? email;
+const firstName = (email) => fullName(email).split(' ')[0];
 
 // ---- Boot ----
 els.hoursLabel.textContent = `${fmtClock(...BUSINESS_HOURS.start)} – ${fmtClock(...BUSINESS_HOURS.end)}`;
 els.tzLabel.textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
-renderDurationOptions();
+renderIntakeForm();
 renderWeekHeader();
 renderGridSkeleton();
 showOverlay('connect');
+bootAuth();
 
 els.connect.addEventListener('click', connect);
 els.refresh.addEventListener('click', () => load());
@@ -54,14 +80,45 @@ els.jump.addEventListener('change', () => {
   const [y, m, d] = els.jump.value.split('-').map(Number);
   changeWeek(new Date(y, m - 1, d)); // parse as local, not UTC
 });
+els.callType.addEventListener('change', onIntakeChange);
+els.company.addEventListener('input', onIntakeChange);
+els.products.addEventListener('change', onProductChange);
+document.addEventListener('keydown', (e) => e.key === 'Escape' && closePopover());
+// Clicks inside the popover never reach the document (a chip click re-renders the popover, which
+// would otherwise detach the target and make the "outside" check below close it).
+els.popover.addEventListener('click', (e) => e.stopPropagation());
+document.addEventListener('click', (e) => {
+  if (els.popover.hidden || e.target.closest?.('.window')) return;
+  closePopover();
+});
 
-// ---- Actions ----
+// ---- Auth ----
+
+/**
+ * Page load: try to get a token without bothering the user. After the one-time consent this
+ * completes invisibly (or as a sub-second popup flash). If it fails for any reason — popup
+ * blocked, signed-out browser, grant revoked — the Connect button is the fallback, not an error.
+ */
+async function bootAuth() {
+  els.connect.disabled = true;
+  try {
+    me = await getMe();
+    setToken(await requestAccessToken({ silent: true, hint: me }));
+    await load();
+  } catch (err) {
+    console.debug('Silent sign-in unavailable, showing Connect:', err.code ?? err.message);
+    showOverlay('connect');
+  } finally {
+    els.connect.disabled = false;
+  }
+}
+
+/** The visible fallback. Same request; a user gesture lets the popup open if it was blocked. */
 async function connect() {
   els.connect.disabled = true;
   try {
-    accessToken = await requestAccessToken();
-    els.connect.hidden = true;
-    els.refresh.hidden = false;
+    me ??= await getMe();
+    setToken(await requestAccessToken({ hint: me }));
     await load();
   } catch (err) {
     setNotices([{ kind: 'error', text: err.message }]);
@@ -70,24 +127,62 @@ async function connect() {
   }
 }
 
+function setToken({ accessToken: token, expiresAt }) {
+  accessToken = token;
+  els.connect.hidden = true;
+  els.refresh.hidden = false;
+  scheduleRenewal(expiresAt);
+}
+
+function clearToken() {
+  accessToken = null;
+  clearTimeout(renewTimer);
+  renewTimer = null;
+  els.connect.textContent = 'Reconnect Google Calendar';
+  els.connect.hidden = false;
+  els.refresh.hidden = true;
+}
+
+/** Renew silently ~10 minutes before expiry so a tab left open never goes stale mid-use. */
+function scheduleRenewal(expiresAt) {
+  clearTimeout(renewTimer);
+  const delay = Math.max(expiresAt - Date.now() - RENEW_BEFORE_EXPIRY_MS, RENEW_MIN_DELAY_MS);
+  renewTimer = setTimeout(renewSilently, delay);
+}
+
+async function renewSilently() {
+  try {
+    setToken(await requestAccessToken({ silent: true, hint: me }));
+  } catch (err) {
+    // Keep the current token (still valid for a few minutes) and surface the one-click fix.
+    // If it does expire before the user clicks, the 401 path in load() takes over.
+    console.debug('Silent renewal failed, showing Reconnect:', err.code ?? err.message);
+    els.connect.textContent = 'Reconnect Google Calendar';
+    els.connect.hidden = false;
+  }
+}
+
+// ---- Actions ----
+
 async function load() {
   if (!accessToken) return showOverlay('connect');
+  closePopover();
   showOverlay('loading');
   els.refresh.disabled = true;
   try {
-    data = await loadAvailability(accessToken, { weekOf, minMs: minMinutes * 60_000 });
+    [data, ledger] = await Promise.all([
+      loadAvailability(accessToken, { weekOf, minMs: minMinutes * 60_000 }),
+      readLedger(),
+    ]);
     els.asOf.textContent = `As of ${fmtTime(data.fetchedAt)}`;
     renderWeekHeader();
     renderWindows();
     renderPeopleNotices();
   } catch (err) {
     if (err.status === 401) {
-      // Token expired (~1 hr). Ask for a fresh one; nothing is stored.
-      accessToken = null;
+      // Token expired and silent renewal didn't get there first. Ask for a fresh one.
+      clearToken();
       data = null;
-      els.connect.textContent = 'Reconnect Google Calendar';
-      els.connect.hidden = false;
-      els.refresh.hidden = true;
       showOverlay('connect');
       setNotices([{ kind: 'warn', text: 'Your Google session expired. Reconnect to refresh availability.' }]);
     } else {
@@ -101,6 +196,7 @@ async function load() {
 function changeWeek(date) {
   weekOf = date;
   data = null;
+  closePopover();
   renderWeekHeader();
   renderGridSkeleton();
   if (accessToken) load();
@@ -111,16 +207,34 @@ function changeDuration(minutes) {
   minMinutes = minutes;
   writePref(minutes);
   renderDurationOptions();
+  onIntakeChange();
   if (!data) return;
   // Pure recompute from the calendars already in memory; no refetch.
-  const { people, offerable } = computeAvailability(data.ids, data.calendars, data.windows, {
+  const { people, offerable, seFree } = computeAvailability(data.ids, data.calendars, data.windows, {
     minMs: minutes * 60_000,
   });
-  data = { ...data, people, offerable };
+  data = { ...data, people, offerable, seFree };
   renderWindows();
 }
 
-// ---- Rendering ----
+// ---- Intake form ----
+
+function renderIntakeForm() {
+  els.callType.replaceChildren(
+    el('option', { value: '', textContent: 'Select…' }),
+    ...Object.entries(CALL_TYPES).map(([k, label]) => el('option', { value: k, textContent: label })),
+  );
+  els.products.replaceChildren(
+    ...Object.entries(PRODUCTS).map(([k, label]) => {
+      const pill = el('label', { className: `pill${k === 'full_platform' ? ' pill-full' : ''}` });
+      pill.append(el('input', { type: 'checkbox', value: k }), el('span', { textContent: label }));
+      return pill;
+    }),
+  );
+  renderDurationOptions();
+  updateTitlePreview();
+}
+
 function renderDurationOptions() {
   els.durations.replaceChildren(
     ...DURATION_OPTIONS.map((m) => {
@@ -131,6 +245,141 @@ function renderDurationOptions() {
     }),
   );
 }
+
+/** Full Platform is exclusive: it clears + disables the modules; all six modules collapse to it. */
+function onProductChange(e) {
+  const boxes = [...els.products.querySelectorAll('input')];
+  const full = boxes.find((b) => b.value === 'full_platform');
+  const modules = boxes.filter((b) => b.value !== 'full_platform');
+  if (e?.target !== full && modules.every((b) => b.checked)) full.checked = true;
+  for (const b of modules) {
+    if (full.checked) b.checked = false;
+    b.disabled = full.checked;
+  }
+  onIntakeChange();
+}
+
+function readIntake() {
+  return {
+    callTypeKey: els.callType.value,
+    productKeys: normalizeProducts([...els.products.querySelectorAll('input:checked')].map((b) => b.value)),
+    durationMin: minMinutes,
+    companyName: els.company.value,
+  };
+}
+
+function onIntakeChange() {
+  updateTitlePreview();
+  if (picked) renderPopover(); // keep the summary in sync
+}
+
+function updateTitlePreview() {
+  const intake = readIntake();
+  if (isIntakeComplete(intake)) {
+    els.titlePreview.textContent = buildEventTitle(intake);
+    els.titlePreview.classList.remove('muted');
+  } else {
+    els.titlePreview.textContent = 'complete the form above';
+    els.titlePreview.classList.add('muted');
+  }
+}
+
+// ---- Popover: start-time chips + assignment preview ----
+
+/** The maximal contiguous run of offerable time containing this segment (segments only split on label changes). */
+function runContaining(segment) {
+  const segs = data.offerable;
+  let i = segs.indexOf(segment);
+  let j = i;
+  while (i > 0 && segs[i - 1].end === segs[i].start) i--;
+  while (j < segs.length - 1 && segs[j].end === segs[j + 1].start) j++;
+  const run = segs.slice(i, j + 1);
+  return { start: run[0].start, end: run[run.length - 1].end, ses: [...new Set(run.flatMap((s) => s.ses))] };
+}
+
+function openPopover(segment, blockEl) {
+  const run = runContaining(segment);
+  picked = { run, start: null };
+  renderPopover();
+  positionPopover(blockEl);
+}
+
+function closePopover() {
+  picked = null;
+  els.popover.hidden = true;
+  els.popover.replaceChildren();
+}
+
+function renderPopover() {
+  const { run, start } = picked;
+  const durMs = minMinutes * 60_000;
+  const chips = startTimes(run, minMinutes).filter((t) => sesFreeFor(data.seFree, t, t + durMs).length);
+  const day = new Date(run.start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+
+  const head = el('div', { className: 'popover-head' });
+  head.append(
+    el('div', { className: 'popover-title', textContent: `${day} · ${fmtTime(run.start)} – ${fmtTime(run.end)}` }),
+    el('button', { className: 'popover-close', type: 'button', textContent: '×', ariaLabel: 'Close' }),
+  );
+  head.querySelector('.popover-close').addEventListener('click', closePopover);
+
+  const chipsEl = el('div', { className: 'chips' });
+  if (!chips.length) {
+    chipsEl.append(el('p', { className: 'muted', textContent: `No ${minMinutes}-minute slot fits here.` }));
+  }
+  for (const t of chips) {
+    const c = el('button', { className: 'chip', type: 'button', textContent: fmtTime(t) });
+    c.setAttribute('aria-pressed', String(t === start));
+    c.addEventListener('click', () => {
+      picked.start = t;
+      renderPopover();
+    });
+    chipsEl.append(c);
+  }
+
+  els.popover.replaceChildren(head, el('p', { className: 'popover-hint', textContent: `Start time (${minMinutes} min)` }), chipsEl);
+  if (start != null) els.popover.append(renderSummary(start, start + durMs));
+  els.popover.hidden = false;
+}
+
+function renderSummary(start, end) {
+  const intake = readIntake();
+  const candidates = sesFreeFor(data.seFree, start, end);
+  const pick = pickSE(candidates, ledger);
+
+  const box = el('div', { className: 'summary' });
+  box.append(row('When', `${fmtTime(start)} – ${fmtTime(end)}`));
+  box.append(row('SE', pick ? fullName(pick.se) : 'No SE is free for this slot'));
+  const complete = isIntakeComplete(intake);
+  box.append(row('Title', complete ? buildEventTitle(intake) : 'Complete the form above to set the title', !complete));
+  // The title may say "Multi-Product"; the description (shown to the SE) always lists the modules.
+  if (complete) box.append(row('Products', buildEventDescription(intake).replace(/^Products: /, '')));
+  const book = el('button', { className: 'btn btn-primary', type: 'button', textContent: 'Book', disabled: true });
+  book.title = 'Booking arrives in the next build step';
+  box.append(book);
+  return box;
+
+  function row(label, value, muted = false) {
+    const r = el('div', { className: 'summary-row' });
+    r.append(el('span', { className: 'summary-label', textContent: label }), el('span', { className: muted ? 'muted' : '', textContent: value }));
+    return r;
+  }
+}
+
+/** Place the popover beside the clicked block, flipping left when it would overflow the grid. */
+function positionPopover(blockEl) {
+  const wrap = els.grid.parentElement.getBoundingClientRect();
+  const b = blockEl.getBoundingClientRect();
+  const p = els.popover;
+  const width = p.offsetWidth || 280;
+  let left = b.right - wrap.left + 8;
+  if (left + width > wrap.width) left = Math.max(8, b.left - wrap.left - width - 8);
+  const top = Math.min(b.top - wrap.top, Math.max(0, wrap.height - (p.offsetHeight || 200) - 8));
+  p.style.left = `${left}px`;
+  p.style.top = `${top}px`;
+}
+
+// ---- Rendering ----
 
 function renderWeekHeader() {
   const { start, end } = weekBounds(weekOf);
@@ -193,7 +442,7 @@ function renderGridSkeleton() {
     const dayEnd = new Date(d).setHours(BUSINESS_HOURS.end[0], BUSINESS_HOURS.end[1], 0, 0);
     if (now > dayStart) {
       const past = el('div', { className: 'past' });
-      past.style.height = `${(Math.min(+now, dayEnd) - dayStart) / 60_000 * PX_PER_MIN}px`;
+      past.style.height = `${((Math.min(+now, dayEnd) - dayStart) / 60_000) * PX_PER_MIN}px`;
       col.append(past);
     }
     body.append(col);
@@ -204,6 +453,7 @@ function renderGridSkeleton() {
 
 /** Place offerable windows into the day columns. Rebuilds the skeleton so stale blocks go away. */
 function renderWindows() {
+  closePopover();
   renderGridSkeleton();
   const cols = new Map([...els.grid.querySelectorAll('.day-col')].map((c) => [c.dataset.day, c]));
   const dayStartMin = BUSINESS_HOURS.start[0] * 60 + BUSINESS_HOURS.start[1];
@@ -214,15 +464,16 @@ function renderWindows() {
     if (!col) continue;
     const top = (s.getHours() * 60 + s.getMinutes() - dayStartMin) * PX_PER_MIN;
     const height = ((w.end - w.start) / 60_000) * PX_PER_MIN;
-    const block = el('div', { className: 'window' });
+    const block = el('button', { className: 'window', type: 'button' });
     block.style.top = `${top}px`;
     block.style.height = `${height}px`;
-    block.title = `${fmtTime(w.start)} – ${fmtTime(w.end)} · ${w.ses.map((e) => nameByEmail.get(e) ?? e).join(', ')}`;
+    block.title = `${fmtTime(w.start)} – ${fmtTime(w.end)} · ${w.ses.map(fullName).join(', ')} — click to pick a start time`;
     block.append(
       el('span', { className: 'window-time', textContent: `${fmtTime(w.start)} – ${fmtTime(w.end)}` }),
       el('span', { className: 'window-ses', textContent: w.ses.map(firstName).join(' · ') }),
     );
     if (height < 40) block.classList.add('is-short');
+    block.addEventListener('click', () => openPopover(w, block));
     col.append(block);
   }
 
@@ -235,7 +486,7 @@ function renderPeopleNotices() {
   for (const p of data.people) {
     if (!p.error) continue;
     const isMe = p.id === data.me;
-    const who = isMe ? 'your calendar' : `${nameByEmail.get(p.id) ?? p.id}'s calendar`;
+    const who = isMe ? 'your calendar' : `${fullName(p.id)}'s calendar`;
     notices.push({
       kind: isMe ? 'error' : 'warn',
       text: isMe

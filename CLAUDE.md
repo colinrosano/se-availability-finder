@@ -6,6 +6,7 @@ Internal web app for Osano AEs to find times when they and at least one Sales En
 - **v1 spike is done and verified** (`spike/index.html`): Google sign-in + FreeBusy works on localhost and Archie, tested by a non-SE.
 - **Data layer extracted** to `src/lib/` (plain ES modules, `npm test` runs `node:test` coverage). The spike is kept for reference only; do NOT port its layout or styles.
 - **Week-grid UI built** in `src/` (`index.html`, `app.js`, `styles.css`) on top of `src/lib/`. Local-verified; not yet deployed to Archie.
+- **v1.5 booking, first half built:** intake form (call type / product / duration / company), window click → start-time chips (`booking.js startTimes`, quarter-hour snap-up, 30-min step), assignment preview (`assignment.js pickSE` over the `ledger.js` entries). Chips are computed over the contiguous *run* of offerable segments and filtered by `sesFreeFor`, since a slot can span two labeled segments. **Not yet built:** event creation (`calendar.events` scope) and the ledger write; the Book button is disabled until then.
 - **Offerable = AE free ∩ (one SE free)**, computed per SE and split into segments labeled with the available SEs (`computeAvailability` → `offerable[{start,end,ses}]`). Never intersect the AE with the *union* of SE free time; two SEs' short gaps must not combine into one window.
 
 ## Canonical docs
@@ -39,6 +40,7 @@ If a decision is settled in the Project Plan, follow it rather than reopening it
 - OAuth client (Web): `521631312959-uasjdvfko1f9r50gk4d3emoilkisb147.apps.googleusercontent.com`. Not a secret. No client secret, no redirect URIs.
 - Authorized JS origins: `http://localhost:5173` and the Archie origin.
 - Auth: Google Identity Services token client. Access token lives in memory only (~1 hr), never stored.
+- Token renewal (Project Plan §6): silent request on page load and ~10 min before expiry (`prompt: ''` + viewer email as `hint`). Any silent failure (popup blocked, signed out, revoked) falls back to the visible Connect button — never an error state. GIS's default `prompt` is `select_account`, which is why the old Connect always showed a chooser.
 
 ## Known gotchas
 - Never query `"primary"` alongside email IDs — Google collapses duplicate calendars and returns only one key. Query everyone by email, deduped: `[...new Set([ME, ...SE_EMAILS])]`.

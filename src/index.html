@@ -35,10 +35,30 @@
             <input id="jump-date" type="date" />
           </label>
         </div>
-        <div class="duration" role="group" aria-label="Minimum meeting length">
-          <span class="duration-label">Show windows of at least</span>
-          <div id="duration-options" class="segmented"></div>
+      </section>
+
+      <section class="intake" aria-label="Booking details">
+        <div class="intake-fields">
+          <label class="field">
+            <span class="field-label">Call type</span>
+            <select id="call-type">
+              <option value="">Select…</option>
+            </select>
+          </label>
+          <fieldset class="field field-products">
+            <legend class="field-label">Product</legend>
+            <div id="products" class="pills"></div>
+          </fieldset>
+          <div class="field" role="group" aria-labelledby="duration-label">
+            <span id="duration-label" class="field-label">Duration</span>
+            <div id="duration-options" class="segmented"></div>
+          </div>
+          <label class="field">
+            <span class="field-label">Company</span>
+            <input id="company" type="text" autocomplete="organization" placeholder="Prospect company name" />
+          </label>
         </div>
+        <p class="title-preview"><span class="muted">Event title:</span> <span id="title-preview"></span></p>
       </section>
 
       <div id="notices" class="notices" aria-live="polite"></div>
@@ -46,6 +66,7 @@
       <section class="grid-wrap">
         <div id="grid" class="grid" aria-label="Weekly availability"></div>
         <div id="grid-overlay" class="grid-overlay" hidden></div>
+        <div id="popover" class="popover" role="dialog" aria-label="Pick a start time" hidden></div>
       </section>
 
       <p class="footnote">
