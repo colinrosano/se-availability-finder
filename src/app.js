@@ -19,7 +19,7 @@ import {
 import { pickSE, ledgerStats } from './lib/assignment.js';
 import { readLedger, recordAssignment } from './lib/ledger.js';
 import { createEvent } from './lib/events.js';
-import { formatSlotsText } from './lib/slotsText.js';
+import { formatSlotsText, mergeRuns } from './lib/slotsText.js';
 
 const PX_PER_MIN = 1; // grid scale: 1 minute = 1px → a 9-hour day is 540px tall
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -268,6 +268,8 @@ async function copySlots() {
     const label = btn.textContent;
     btn.textContent = 'Copied';
     setTimeout(() => (btn.textContent = label), 2000);
+    const n = mergeRuns(data.offerable).length;
+    toast(`Copied ${n} window${n === 1 ? '' : 's'} when you and an SE are both free.`);
   } catch {
     // Clipboard blocked (permissions, insecure context): show the text so it can be selected by hand.
     const box = el('div', { className: 'notice notice-warn' });
@@ -628,7 +630,7 @@ function renderWeekHeader() {
   els.jump.value = toDateInputValue(start);
 }
 
-/** Time axis, five day columns with hour lines, today highlight, past shading. Windows come later. */
+/** Time axis, five hatched ("unavailable") day columns with hour lines and today highlight. Windows come later. */
 function renderGridSkeleton() {
   const { start } = weekBounds(weekOf);
   const dayStartMin = hours().start[0] * 60 + hours().start[1];
@@ -674,14 +676,7 @@ function renderGridSkeleton() {
       line.style.top = `${(m - dayStartMin) * PX_PER_MIN}px`;
       col.append(line);
     }
-    // Shade the part of the day that is already gone.
-    const dayStart = new Date(d).setHours(hours().start[0], hours().start[1], 0, 0);
-    const dayEnd = new Date(d).setHours(hours().end[0], hours().end[1], 0, 0);
-    if (now > dayStart) {
-      const past = el('div', { className: 'past' });
-      past.style.height = `${((Math.min(+now, dayEnd) - dayStart) / 60_000) * PX_PER_MIN}px`;
-      col.append(past);
-    }
+    // No separate past shading: the whole column is hatched "unavailable"; open windows sit on top.
     body.append(col);
   }
 
@@ -704,10 +699,11 @@ function renderWindows() {
     const block = el('button', { className: 'window', type: 'button' });
     block.style.top = `${top}px`;
     block.style.height = `${height}px`;
-    block.title = `${fmtTime(w.start)} – ${fmtTime(w.end)} · ${w.ses.map(fullName).join(', ')} — click to pick a start time`;
+    // "You" first: every window is the viewer's free time intersected with the named SEs'.
+    block.title = `${fmtTime(w.start)} – ${fmtTime(w.end)} · you and ${w.ses.map(fullName).join(', ')} are free — click to pick a start time`;
     block.append(
       el('span', { className: 'window-time', textContent: `${fmtTime(w.start)} – ${fmtTime(w.end)}` }),
-      el('span', { className: 'window-ses', textContent: w.ses.map(firstName).join(' · ') }),
+      el('span', { className: 'window-ses', textContent: ['You', ...w.ses.map(firstName)].join(' · ') }),
     );
     if (height < 40) block.classList.add('is-short');
     block.addEventListener('click', () => openPopover(w, block));
@@ -768,6 +764,14 @@ function showOverlay(kind, detail = '') {
 
 function hideOverlay() {
   els.overlay.hidden = true;
+}
+
+/** A brief, self-dismissing confirmation that doesn't disturb the notices area. */
+function toast(text, ms = 3500) {
+  document.querySelector('.toast')?.remove();
+  const t = el('div', { className: 'toast', textContent: text, role: 'status' });
+  document.body.append(t);
+  setTimeout(() => t.remove(), ms);
 }
 
 // ---- Helpers ----

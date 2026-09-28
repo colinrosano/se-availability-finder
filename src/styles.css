@@ -295,10 +295,12 @@ h2 {
 .day-col {
   position: relative;
   border-left: 1px solid var(--line);
+  background-color: #fff;
+  background-image: repeating-linear-gradient(-45deg, rgba(95, 88, 103, 0.09) 0 6px, transparent 6px 12px);
 }
 
 .day-col.is-today {
-  background: #faf7fe;
+  background-color: #faf7fe;
 }
 
 .hour-line {
@@ -308,18 +310,6 @@ h2 {
   border-top: 1px solid var(--line);
 }
 
-.past {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  background: repeating-linear-gradient(
-    -45deg,
-    rgba(95, 88, 103, 0.06) 0 6px,
-    transparent 6px 12px
-  );
-  pointer-events: none;
-}
 
 .window {
   position: absolute;
@@ -861,4 +851,54 @@ h2 {
 .summary-note {
   margin: 0;
   font-size: 0.78rem;
+}
+
+/* ---- Toast ---- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.5rem;
+  transform: translateX(-50%);
+  z-index: 20;
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius);
+  background: var(--dark-blue);
+  color: #fff;
+  font-size: 0.9rem;
+  box-shadow: 0 8px 24px rgba(14, 4, 22, 0.25);
+}
+
+/* ---- Legend ---- */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 1.25rem;
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+  color: var(--gray);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  flex: none;
+}
+
+.swatch-open {
+  background: var(--purple);
+  border-color: var(--purple);
+}
+
+.swatch-unavailable {
+  background-color: #fff;
+  background-image: repeating-linear-gradient(-45deg, rgba(95, 88, 103, 0.25) 0 3px, transparent 3px 6px);
 }
