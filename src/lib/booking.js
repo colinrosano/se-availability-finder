@@ -58,6 +58,25 @@ export function buildEventDescription({ productKeys }) {
   return `Products: ${names.join(', ')}`;
 }
 
+const EMAIL_RE = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
+
+/**
+ * Parse a free-text list of prospect emails (comma, semicolon, or whitespace separated).
+ * Lower-cased and deduped. Anything that isn't an email is reported, not dropped silently.
+ * @returns {{ emails: string[], invalid: string[] }}
+ */
+export function parseEmails(text) {
+  const emails = [];
+  const invalid = [];
+  for (const raw of String(text ?? '').split(/[\s,;]+/)) {
+    if (!raw) continue;
+    const e = raw.replace(/^<|>$/g, '').toLowerCase();
+    if (!EMAIL_RE.test(e)) invalid.push(raw);
+    else if (!emails.includes(e)) emails.push(e);
+  }
+  return { emails, invalid };
+}
+
 /** True when every required field is present. */
 export function isIntakeComplete({ companyName, productKeys, callTypeKey, durationMin }) {
   return Boolean(

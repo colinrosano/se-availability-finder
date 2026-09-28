@@ -12,12 +12,14 @@ import {
   buildEventTitle,
   buildEventDescription,
   isIntakeComplete,
+  parseEmails,
   startTimes,
   sesFreeFor,
 } from './lib/booking.js';
 import { pickSE, ledgerStats } from './lib/assignment.js';
 import { readLedger, recordAssignment } from './lib/ledger.js';
 import { createEvent } from './lib/events.js';
+import { formatSlotsText } from './lib/slotsText.js';
 
 const PX_PER_MIN = 1; // grid scale: 1 minute = 1px → a 9-hour day is 540px tall
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -50,10 +52,12 @@ const els = {
   thisWeek: $('this-week'),
   weekLabel: $('week-label'),
   jump: $('jump-date'),
+  copySlots: $('copy-slots'),
   callType: $('call-type'),
   products: $('products'),
   durations: $('duration-options'),
   company: $('company'),
+  prospects: $('prospects'),
   dealUrl: $('deal-url'),
   titlePreview: $('title-preview'),
   notices: $('notices'),
@@ -98,9 +102,11 @@ els.jump.addEventListener('change', () => {
   const [y, m, d] = els.jump.value.split('-').map(Number);
   changeWeek(new Date(y, m - 1, d)); // parse as local, not UTC
 });
+els.copySlots.addEventListener('click', copySlots);
 els.callType.addEventListener('change', onIntakeChange);
 els.company.addEventListener('input', onIntakeChange);
 els.dealUrl.addEventListener('input', onIntakeChange);
+els.prospects.addEventListener('input', onIntakeChange);
 els.products.addEventListener('change', onProductChange);
 els.settingsBtn.addEventListener('click', openSettings);
 els.rosterAdd.addEventListener('click', () => addRosterRow());
@@ -228,6 +234,7 @@ function changeWeek(date) {
   weekOf = date;
   data = null;
   flash = null;
+  els.copySlots.disabled = true;
   closePopover();
   renderWeekHeader();
   renderGridSkeleton();
@@ -247,6 +254,30 @@ function changeDuration(minutes) {
   });
   data = { ...data, people, offerable, seFree };
   renderWindows();
+}
+
+// ---- Copy available times ----
+
+/** Paste-ready text of the windows on screen (this week, at the current duration filter). */
+async function copySlots() {
+  const text = formatSlotsText(data?.offerable ?? []);
+  if (!text) return;
+  const btn = els.copySlots;
+  try {
+    await navigator.clipboard.writeText(text);
+    const label = btn.textContent;
+    btn.textContent = 'Copied';
+    setTimeout(() => (btn.textContent = label), 2000);
+  } catch {
+    // Clipboard blocked (permissions, insecure context): show the text so it can be selected by hand.
+    const box = el('div', { className: 'notice notice-warn' });
+    box.append(
+      el('div', { textContent: "Couldn't copy automatically — select and copy the text below." }),
+      el('textarea', { className: 'slots-text', readOnly: true, value: text, rows: Math.min(8, text.split('\n').length + 1) }),
+    );
+    els.notices.prepend(box);
+    box.querySelector('textarea').select();
+  }
 }
 
 // ---- Settings (admin) ----
@@ -393,10 +424,19 @@ function readIntake() {
     companyName: els.company.value,
     // Optional in v1.5; becomes required and drives company name + Deal Collaborator in v2 (§12).
     dealUrl: els.dealUrl.value.trim(),
+    // Optional (Colin, Sep 2026, overriding §11 "AE + SE only"): prospects invited at Book time.
+    // Used transiently for the attendee list; never stored.
+    ...(() => {
+      const { emails, invalid } = parseEmails(els.prospects.value);
+      return { prospectEmails: emails, invalidProspects: invalid };
+    })(),
   };
 }
 
 function onIntakeChange() {
+  const { invalid } = parseEmails(els.prospects.value);
+  els.prospects.setAttribute('aria-invalid', String(invalid.length > 0));
+  els.prospects.title = invalid.length ? `Not an email: ${invalid.join(', ')}` : '';
   updateTitlePreview();
   if (picked) renderPopover(); // keep the summary in sync
 }
@@ -483,12 +523,19 @@ function renderSummary(start, end) {
   // The title may say "Multi-Product"; the description (shown to the SE) always lists the modules.
   if (complete) box.append(row('Products', buildEventDescription(intake).replace(/^Products: /, '')));
   if (intake.dealUrl) box.append(row('Deal', intake.dealUrl));
+  const badProspects = intake.invalidProspects.length > 0;
+  if (badProspects) box.append(row('Prospects', `Not an email: ${intake.invalidProspects.join(', ')}`, true));
+  else if (intake.prospectEmails.length) {
+    box.append(row('Prospects', intake.prospectEmails.join(', ')));
+    box.append(el('p', { className: 'muted summary-note', textContent: 'They get the invite when you click Book. No meeting link is attached yet — add Zoom in Google Calendar afterwards.' }));
+  }
 
-  const canBook = complete && pick && !bookingInFlight;
+  const canBook = complete && pick && !badProspects && !bookingInFlight;
   const book = el('button', { className: 'btn btn-primary', type: 'button', disabled: !canBook });
   book.textContent = bookingInFlight ? 'Booking…' : 'Book';
   if (!complete) book.title = 'Complete the form above to book';
   else if (!pick) book.title = 'No SE is free for this slot';
+  else if (badProspects) book.title = 'Fix the prospect emails to book';
   book.addEventListener('click', () => book_(start, end, pick.se, intake));
   box.append(book);
   return box;
@@ -514,7 +561,13 @@ async function book_(start, end, se, intake) {
   const description = buildEventDescription(intake) + (intake.dealUrl ? `\nHubSpot deal: ${intake.dealUrl}` : '');
   let event;
   try {
-    event = await createEvent(accessToken, { summary, description, start, end, attendees: [me, se] });
+    event = await createEvent(accessToken, {
+      summary,
+      description,
+      start,
+      end,
+      attendees: [me, se, ...intake.prospectEmails],
+    });
   } catch (err) {
     bookingInFlight = false;
     if (err.status === 401) {
@@ -529,11 +582,13 @@ async function book_(start, end, se, intake) {
   }
 
   const when = `${new Date(start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}, ${fmtTime(start)} – ${fmtTime(end)}`;
+  const n = intake.prospectEmails.length;
+  const sentTo = n ? `Invites sent to ${fullName(se)} and ${n} prospect${n === 1 ? '' : 's'}.` : 'Invite sent.';
   try {
     ledger = await recordAssignment(se);
     flash = {
       kind: 'success',
-      text: `Booked: ${summary} · ${when} with ${fullName(se)}. Invite sent.`,
+      text: `Booked: ${summary} · ${when} with ${fullName(se)}. ${sentTo}`,
       link: { href: event.htmlLink, label: 'Open in Google Calendar' },
     };
   } catch (err) {
@@ -659,6 +714,7 @@ function renderWindows() {
     col.append(block);
   }
 
+  els.copySlots.disabled = data.offerable.length === 0;
   if (data.offerable.length) hideOverlay();
   else showOverlay('empty');
 }

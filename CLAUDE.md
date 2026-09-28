@@ -58,6 +58,7 @@ If a decision is settled in the Project Plan, follow it rather than reopening it
 ## Locked product decisions
 - Availability is always computed against the **entire SE roster**; no SE-selection step. A window is offerable if the AE + at least 1 SE are free. Zero-SE windows are hidden.
 - One SE per call.
+- **Prospects may be invited at Book time** via the optional "Prospect emails" intake field (Colin's decision, Sep 28 2026, overriding Project Plan §11 "AE + SE only" — Notion §11 needs the matching update). Emails are used transiently for the attendee list and never stored. No meeting link is attached yet; Zoom is a pending decision (SE Personal Meeting Room links in the roster is the recommended path).
 
 ## Phases
 1. **v1** — Read from Google Calendar: availability week-grid + admin settings (built, local-verified; remaining: Archie pilot deploy)

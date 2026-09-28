@@ -521,17 +521,32 @@ h2 {
   border-style: solid;
 }
 
-/* Second row of the intake grid: title preview on the left, deal link under Duration + Company. */
-.title-preview {
+/* Row 2 of the intake grid: prospect emails left, deal link under Duration + Company. Row 3: title. */
+.field-prospects {
   grid-column: 1 / 3;
-  align-self: end;
+}
+
+.field-deal {
+  grid-column: 3 / 5;
+}
+
+.title-preview {
+  grid-column: 1 / -1;
   margin: 0;
   font-size: 0.85rem;
   color: var(--dark);
 }
 
-.field-deal {
-  grid-column: 3 / 5;
+.field-hint {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--gray);
+}
+
+.field input[aria-invalid='true'] {
+  border-color: var(--error);
+  outline-color: var(--error);
 }
 
 .field input[type='url'] {
@@ -664,6 +679,7 @@ h2 {
   }
 
   .title-preview,
+  .field-prospects,
   .field-deal {
     grid-column: 1 / -1;
   }
@@ -825,4 +841,24 @@ h2 {
   margin: 0.5rem 0 0;
   font-size: 0.82rem;
   color: var(--gray);
+}
+
+/* ---- Copy available times ---- */
+.slots-text {
+  display: block;
+  width: 100%;
+  margin-top: 0.5rem;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--dark);
+  resize: vertical;
+}
+
+.summary-note {
+  margin: 0;
+  font-size: 0.78rem;
 }

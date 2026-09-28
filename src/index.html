@@ -73,6 +73,9 @@
             <input id="jump-date" type="date" />
           </label>
         </div>
+        <button id="copy-slots" class="btn btn-ghost" type="button" disabled title="Copy this week's open times as text for a prospect email">
+          Copy available times
+        </button>
       </section>
 
       <section class="intake" aria-label="Booking details">
@@ -95,11 +98,15 @@
             <span class="field-label">Company</span>
             <input id="company" type="text" autocomplete="organization" placeholder="Prospect company name" />
           </label>
-          <p class="title-preview"><span class="muted">Event title:</span> <span id="title-preview"></span></p>
+          <label class="field field-prospects">
+            <span class="field-label">Prospect emails <span class="field-hint">optional — invited on Book</span></span>
+            <input id="prospects" type="text" inputmode="email" autocomplete="off" spellcheck="false" placeholder="jane@acme.com, sam@acme.com" />
+          </label>
           <label class="field field-deal">
             <span class="field-label">HubSpot deal link</span>
             <input id="deal-url" type="url" inputmode="url" autocomplete="off" placeholder="https://app.hubspot.com/contacts/…/deal/…" />
           </label>
+          <p class="title-preview"><span class="muted">Event title:</span> <span id="title-preview"></span></p>
         </div>
       </section>
 

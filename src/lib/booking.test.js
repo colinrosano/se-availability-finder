@@ -6,6 +6,7 @@ import {
   buildEventTitle,
   buildEventDescription,
   isIntakeComplete,
+  parseEmails,
   snapUpToQuarter,
   startTimes,
   sesFreeFor,
@@ -69,6 +70,16 @@ test('isIntakeComplete requires every field', () => {
   assert.equal(isIntakeComplete({ ...ok, productKeys: [] }), false);
   assert.equal(isIntakeComplete({ ...ok, productKeys: ['cookie_consent'], callTypeKey: '' }), false);
   assert.equal(isIntakeComplete({ ...ok, productKeys: ['cookie_consent'], durationMin: 20 }), false);
+});
+
+test('parseEmails: separators, case, dedupe, angle brackets, and invalid entries reported', () => {
+  assert.deepEqual(parseEmails(''), { emails: [], invalid: [] });
+  assert.deepEqual(parseEmails('  '), { emails: [], invalid: [] });
+  assert.deepEqual(parseEmails('A@Acme.com, b@acme.com; c@acme.com d@acme.com\n<a@acme.com>'), {
+    emails: ['a@acme.com', 'b@acme.com', 'c@acme.com', 'd@acme.com'],
+    invalid: [],
+  });
+  assert.deepEqual(parseEmails('a@acme.com, nope, b@acme'), { emails: ['a@acme.com'], invalid: ['nope', 'b@acme'] });
 });
 
 test('snapUpToQuarter rounds up, and leaves aligned times alone', () => {
