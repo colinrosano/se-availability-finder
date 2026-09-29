@@ -14,8 +14,8 @@ export const COLLABORATOR_PROP = 'hs_all_collaborator_owner_ids';
 /**
  * Pure. Parse a HubSpot deal record link. Accepts the classic and the newer record URL shapes
  * on any app*.hubspot.com host (regions use app-na2 etc.), with or without trailing paths/query.
- *   https://app.hubspot.com/contacts/244307193/deal/351101839037
- *   https://app-na2.hubspot.com/contacts/244307193/record/0-3/351101839037/
+ *   https://app.hubspot.com/contacts/12345678/deal/987654321
+ *   https://app-na2.hubspot.com/contacts/12345678/record/0-3/987654321/
  * @returns {DealRef | null}
  */
 export function parseDealUrl(url) {

@@ -35,8 +35,8 @@ beforeEach(() => {
 });
 
 test('parseDealUrl: classic and record URL shapes, regional hosts, trailing bits; rejects junk', () => {
-  assert.deepEqual(parseDealUrl('https://app.hubspot.com/contacts/244307193/deal/351101839037'), { portalId: '244307193', dealId: '351101839037' });
-  assert.deepEqual(parseDealUrl(' https://app-na2.hubspot.com/contacts/244307193/record/0-3/351101839037/ '), { portalId: '244307193', dealId: '351101839037' });
+  assert.deepEqual(parseDealUrl('https://app.hubspot.com/contacts/12345678/deal/987654321'), { portalId: '12345678', dealId: '987654321' });
+  assert.deepEqual(parseDealUrl(' https://app-na2.hubspot.com/contacts/12345678/record/0-3/987654321/ '), { portalId: '12345678', dealId: '987654321' });
   assert.deepEqual(parseDealUrl('https://app.hubspot.com/contacts/1/deal/2?interaction=note'), { portalId: '1', dealId: '2' });
   assert.equal(parseDealUrl('https://app.hubspot.com/contacts/1/company/2'), null);
   assert.equal(parseDealUrl('https://evil.example.com/contacts/1/deal/2'), null);
@@ -44,7 +44,7 @@ test('parseDealUrl: classic and record URL shapes, regional hosts, trailing bits
   assert.equal(parseDealUrl(''), null);
 });
 
-test('isExpectedPortal compares against the configured (placeholder) portal', () => {
+test('isExpectedPortal compares against the configured portal', () => {
   assert.equal(isExpectedPortal(HUBSPOT.portalId), true);
   assert.equal(isExpectedPortal(Number(HUBSPOT.portalId)), true);
   assert.equal(isExpectedPortal('1'), false);
@@ -59,17 +59,17 @@ test('mergeCollaborators appends without duplicates and never removes', () => {
 
 test('getDeal: reads name/stage/company/collaborators via the secrets proxy with the token placeholder', async () => {
   const calls = fakeProxy({
-    'GET /crm/v3/objects/deals/351101839037': {
-      id: '351101839037',
+    'GET /crm/v3/objects/deals/987654321': {
+      id: '987654321',
       properties: { dealname: 'Acme — New Business', dealstage: 'qualifiedtobuy', pipeline: 'default', [COLLABORATOR_PROP]: '1;2' },
       associations: { companies: { results: [{ id: '99' }] } },
     },
     'GET /crm/v3/pipelines/deals/default': { stages: [{ id: 'qualifiedtobuy', label: 'Qualified To Buy' }] },
     'GET /crm/v3/objects/companies/99': { properties: { name: 'Acme Corp' } },
   });
-  const d = await getDeal('351101839037');
+  const d = await getDeal('987654321');
   assert.deepEqual(d, {
-    id: '351101839037', name: 'Acme — New Business', stageId: 'qualifiedtobuy', stageLabel: 'Qualified To Buy',
+    id: '987654321', name: 'Acme — New Business', stageId: 'qualifiedtobuy', stageLabel: 'Qualified To Buy',
     companyId: '99', companyName: 'Acme Corp', collaboratorIds: ['1', '2'],
   });
   assert.equal(calls[0].secretName, HUBSPOT.secretName);
@@ -87,8 +87,8 @@ test('getDeal: no company, unknown stage label falls back to the id; 404 throws 
 });
 
 test('findOwnerIdByEmail: exact email match only; null when absent', async () => {
-  fakeProxy({ 'GET /crm/v3/owners': (req) => ({ results: /john/.test(req.url) ? [] : [{ id: '84878155', email: 'Colin@Example.com' }] }) });
-  assert.equal(await findOwnerIdByEmail('colin@example.com'), '84878155');
+  fakeProxy({ 'GET /crm/v3/owners': (req) => ({ results: /john/.test(req.url) ? [] : [{ id: '1001', email: 'Colin@Example.com' }] }) });
+  assert.equal(await findOwnerIdByEmail('colin@example.com'), '1001');
   assert.equal(await findOwnerIdByEmail('john.allman@osano.com'), null);
 });
 
