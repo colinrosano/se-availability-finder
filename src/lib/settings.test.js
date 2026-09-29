@@ -1,6 +1,6 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadSettings, saveSettings, validateSettings, isAdmin, defaultSettings, SETTINGS_KEY } from './settings.js';
+import { loadSettings, saveSettings, validateSettings, isAdmin, defaultSettings, SETTINGS_KEY, hubspotTokenStatus, setHubspotToken } from './settings.js';
 
 function fakeKv(initial = {}) {
   const m = new Map(Object.entries(initial));
@@ -78,4 +78,26 @@ test('localStorage fallback round-trips when the Archie SDK is absent', async ()
   globalThis.localStorage = { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, v) };
   await saveSettings(good());
   assert.equal((await loadSettings()).source, 'store');
+});
+
+test('hubspotTokenStatus: no vault on localhost; stored/not stored on Archie; list errors read as not stored', async () => {
+  assert.deepEqual(await hubspotTokenStatus(), { vault: false, stored: false });
+  globalThis.archie = { secrets: { async list() { return ['other']; } } };
+  assert.deepEqual(await hubspotTokenStatus(), { vault: true, stored: false });
+  globalThis.archie = { secrets: { async list() { return ['other', 'hubspot']; } } };
+  assert.deepEqual(await hubspotTokenStatus(), { vault: true, stored: true });
+  globalThis.archie = { secrets: { async list() { throw new Error('down'); } } };
+  assert.deepEqual(await hubspotTokenStatus(), { vault: true, stored: false });
+});
+
+test('setHubspotToken: validates the shape, trims quotes, writes under the configured name, refuses without a vault', async () => {
+  const writes = [];
+  globalThis.archie = { secrets: { async set(name, value) { writes.push([name, value]); } } };
+  await setHubspotToken('  "pat-test-0000000000000000000000000000"  ');
+  assert.deepEqual(writes, [['hubspot', 'pat-test-0000000000000000000000000000']]);
+  await assert.rejects(setHubspotToken('hubspot-app-name'), /start with "pat-"/);
+  await assert.rejects(setHubspotToken(''), /start with "pat-"/);
+  assert.equal(writes.length, 1, 'nothing written on rejection');
+  delete globalThis.archie;
+  await assert.rejects(setHubspotToken('pat-test-0000000000000000000000000000'), /No secrets vault/);
 });

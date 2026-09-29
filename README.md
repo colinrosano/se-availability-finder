@@ -120,8 +120,10 @@ that last step fails, the booking notice says so and offers Retry.
 **The token is never in code.**
 
 - On Archie, every HubSpot call goes through `archie.secrets.proxy('hubspot', …)`, which
-  injects the private-app token server-side. Store or rotate it from the deployed app's
-  browser console: `await archie.secrets.set('hubspot', '<token>')`.
+  injects the private-app token server-side. Store or rotate it from **Settings → HubSpot**
+  in the app (admins only): paste the new token, Save, then "Test connection". The panel can
+  only tell whether a token is stored, never read it. (The console equivalent is
+  `await archie.secrets.set('hubspot', '<token>')`.)
 - On localhost, run the dev proxy in a second terminal and it injects the token from an env var:
 
   ```bash

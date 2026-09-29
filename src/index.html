@@ -63,6 +63,16 @@
             <label>End <input id="hours-end" type="time" step="900" required /></label>
           </div>
         </section>
+        <section>
+          <h3>HubSpot</h3>
+          <p id="hs-status" class="muted"></p>
+          <div id="hs-manage" class="hs-row">
+            <input id="hs-token" type="password" autocomplete="off" spellcheck="false" placeholder="Paste a new private-app token (pat-…)" aria-label="New HubSpot private-app token" />
+            <button id="hs-save" class="btn btn-ghost btn-small" type="button">Save token</button>
+            <button id="hs-test" class="btn btn-ghost btn-small" type="button">Test connection</button>
+          </div>
+          <p id="hs-result" class="field-status" aria-live="polite"></p>
+        </section>
         <div id="settings-errors" class="settings-errors" aria-live="polite"></div>
         <div class="settings-actions">
           <button id="settings-cancel" class="btn btn-ghost" type="button">Cancel</button>

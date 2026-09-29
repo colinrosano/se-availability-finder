@@ -1,7 +1,7 @@
 // Admin-managed settings: the SE roster and business hours (Project Plan §2 "sales ops admin",
 // §7 "Archie app config store"). The values in config.js are the seed and the fallback.
 // Editing is gated by an admin allow-list — a UI gate, not a security boundary. No DOM code.
-import { SE_ROSTER, BUSINESS_HOURS, ADMIN_EMAILS } from './config.js';
+import { SE_ROSTER, BUSINESS_HOURS, ADMIN_EMAILS, HUBSPOT } from './config.js';
 import { kvStore } from './store.js';
 
 export const SETTINGS_KEY = 'config:settings';
@@ -77,4 +77,32 @@ export async function saveSettings(candidate) {
   if (problems.length) throw Object.assign(new Error(problems.join(' ')), { problems });
   await kvStore().set(SETTINGS_KEY, s);
   return s;
+}
+
+// ---- HubSpot token (Archie secrets vault) ----
+// The vault only ever exposes secret NAMES; values are write-only and injected server-side by
+// archie.secrets.proxy. So the admin panel can show "stored / not stored" and replace the token,
+// never read it. On localhost there is no vault: the dev proxy supplies the token from an env var.
+
+/** @returns {Promise<{ vault: boolean, stored: boolean }>} vault=false on localhost */
+export async function hubspotTokenStatus() {
+  const secrets = globalThis.archie?.secrets;
+  if (!secrets?.list) return { vault: false, stored: false };
+  try {
+    const names = await secrets.list();
+    return { vault: true, stored: Array.isArray(names) && names.includes(HUBSPOT.secretName) };
+  } catch {
+    return { vault: true, stored: false };
+  }
+}
+
+/** Validate the shape of a HubSpot private-app token and store it. Never logs or returns it. */
+export async function setHubspotToken(value) {
+  const token = String(value ?? '').trim().replace(/^['"]|['"]$/g, '');
+  if (!/^pat-[a-z0-9]+-[0-9a-f-]{20,}$/i.test(token)) {
+    throw new Error('That does not look like a HubSpot private-app token (they start with "pat-").');
+  }
+  const secrets = globalThis.archie?.secrets;
+  if (!secrets?.set) throw new Error('No secrets vault here. On localhost, set HUBSPOT_TOKEN for the dev proxy instead.');
+  await secrets.set(HUBSPOT.secretName, token);
 }

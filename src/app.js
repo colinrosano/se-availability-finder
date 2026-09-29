@@ -1,7 +1,7 @@
 // UI for the week grid and booking intake. All DOM code lives here; the data layer is in ./lib/.
 import { DURATION_OPTIONS, HUBSPOT } from './lib/config.js';
 import { parseDealUrl, isExpectedPortal, getDeal, findOwnerIdByEmail, addCollaborator } from './lib/hubspot.js';
-import { loadSettings, saveSettings, defaultSettings, isAdmin } from './lib/settings.js';
+import { loadSettings, saveSettings, defaultSettings, isAdmin, hubspotTokenStatus, setHubspotToken } from './lib/settings.js';
 import { requestAccessToken, getMe } from './lib/auth.js';
 import { loadAvailability, computeAvailability } from './lib/availability.js';
 import { weekBounds, defaultWeekOf, addWeeks } from './lib/businessDays.js';
@@ -82,6 +82,12 @@ const els = {
   settingsSave: $('settings-save'),
   statsBody: $('stats-table').querySelector('tbody'),
   statsNext: $('stats-next'),
+  hsStatus: $('hs-status'),
+  hsManage: $('hs-manage'),
+  hsToken: $('hs-token'),
+  hsSave: $('hs-save'),
+  hsTest: $('hs-test'),
+  hsResult: $('hs-result'),
 };
 
 const fullName = (email) => nameByEmail.get(email) ?? email;
@@ -118,6 +124,8 @@ els.settingsBtn.addEventListener('click', openSettings);
 els.rosterAdd.addEventListener('click', () => addRosterRow());
 els.settingsCancel.addEventListener('click', () => els.dialog.close());
 els.settingsSave.addEventListener('click', saveSettingsFromDialog);
+els.hsSave.addEventListener('click', saveHubspotToken);
+els.hsTest.addEventListener('click', testHubspotConnection);
 document.addEventListener('keydown', (e) => e.key === 'Escape' && closePopover());
 // Clicks inside the popover never reach the document (a chip click re-renders the popover, which
 // would otherwise detach the target and make the "outside" check below close it).
@@ -347,9 +355,65 @@ async function openSettings() {
   els.hoursEnd.value = toTimeInputValue(settings.businessHours.end);
   els.settingsErrors.replaceChildren();
   renderStats([]); // placeholder while the ledger loads
+  els.hsToken.value = '';
+  els.hsResult.textContent = '';
   els.dialog.showModal();
-  ledger = await readLedger(); // fresh each time the panel opens
+  [ledger] = await Promise.all([readLedger(), renderHubspotSection()]); // fresh each time the panel opens
   renderStats(ledger);
+}
+
+// ---- HubSpot token (admin) ----
+
+async function renderHubspotSection() {
+  const { vault, stored } = await hubspotTokenStatus();
+  if (!vault) {
+    els.hsStatus.textContent = 'On localhost the token comes from the dev proxy (HUBSPOT_TOKEN). The vault is only on Archie.';
+    els.hsManage.hidden = true;
+    return;
+  }
+  els.hsManage.hidden = false;
+  els.hsStatus.textContent = stored
+    ? `Token stored in the Archie vault as "${HUBSPOT.secretName}" · portal ${HUBSPOT.portalId}. Values are never readable; paste a new one to replace it.`
+    : `No token stored yet. Paste the private-app token for portal ${HUBSPOT.portalId} to enable deal linking.`;
+}
+
+async function saveHubspotToken() {
+  els.hsSave.disabled = true;
+  setHsResult('Saving…');
+  try {
+    await setHubspotToken(els.hsToken.value);
+    els.hsToken.value = '';
+    await renderHubspotSection();
+    setHsResult('Token saved. Use "Test connection" to confirm it works.', 'ok');
+  } catch (err) {
+    setHsResult(err.message, 'error');
+  } finally {
+    els.hsSave.disabled = false;
+  }
+}
+
+/** Looks the admin up as a HubSpot owner: proves the token, the portal, and the owners scope in one call. */
+async function testHubspotConnection() {
+  els.hsTest.disabled = true;
+  setHsResult('Testing…');
+  try {
+    const ownerId = await findOwnerIdByEmail(me);
+    setHsResult(
+      ownerId
+        ? `Connected · portal ${HUBSPOT.portalId} · you are owner ${ownerId}.`
+        : `Connected to HubSpot, but ${me} is not a user in this portal. Deal linking works; you can't be set as a collaborator.`,
+      ownerId ? 'ok' : 'error',
+    );
+  } catch (err) {
+    setHsResult(err.message, 'error');
+  } finally {
+    els.hsTest.disabled = false;
+  }
+}
+
+function setHsResult(text, kind = '') {
+  els.hsResult.textContent = text;
+  els.hsResult.className = `field-status${kind ? ` is-${kind}` : ''}`;
 }
 
 /** Booking statistics from the ledger: per-SE counts, last assigned, and the rule's next pick. */
