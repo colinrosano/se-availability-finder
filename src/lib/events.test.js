@@ -25,6 +25,7 @@ test('posts the event to the primary calendar with invites sent, and returns id 
     start,
     end,
     attendees: ['ae@osano.com', 'se@osano.com', 'se@osano.com'],
+    organizer: 'AE@osano.com',
     timeZone: 'America/Chicago',
   });
   assert.deepEqual(out, { id: 'evt1', htmlLink: 'https://calendar.google.com/event?eid=abc' });
@@ -39,7 +40,17 @@ test('posts the event to the primary calendar with invites sent, and returns id 
   assert.equal(body.description, 'Products: Cookie Consent');
   assert.deepEqual(body.start, { dateTime: new Date(start).toISOString(), timeZone: 'America/Chicago' });
   assert.deepEqual(body.end, { dateTime: new Date(end).toISOString(), timeZone: 'America/Chicago' });
-  assert.deepEqual(body.attendees, [{ email: 'ae@osano.com' }, { email: 'se@osano.com' }], 'attendees deduped');
+  assert.deepEqual(
+    body.attendees,
+    [{ email: 'ae@osano.com', responseStatus: 'accepted' }, { email: 'se@osano.com' }],
+    'attendees deduped; the organizer is pre-accepted (case-insensitive match), the SE is a normal invite',
+  );
+});
+
+test('without an organizer, no attendee is pre-accepted', async () => {
+  fakeFetch(200, { id: 'e', htmlLink: 'l' });
+  await createEvent('tok', { summary: 's', start: 0, end: 1, attendees: ['a@osano.com'] });
+  assert.deepEqual(JSON.parse(calls[0].init.body).attendees, [{ email: 'a@osano.com' }]);
 });
 
 test('defaults the display time zone to the viewer\'s and description to empty', async () => {

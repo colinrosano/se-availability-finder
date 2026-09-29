@@ -10,19 +10,23 @@ const EVENTS_URL = 'https://www.googleapis.com/calendar/v3/calendars/primary/eve
  *   summary: string, description?: string,
  *   start: number|Date, end: number|Date,          // epoch ms or Date; end is exclusive
  *   attendees: string[],                           // emails; the AE (token owner) is organizer regardless
+ *   organizer?: string,                            // the AE's email: their own attendee entry is pre-accepted,
+ *                                                  // otherwise Google leaves it as "needsAction" and the AE
+ *                                                  // has to accept their own booking
  *   timeZone?: string                              // IANA zone for display; defaults to the viewer's
  * }} event
  * @returns {Promise<{ id: string, htmlLink: string }>}
  * @throws {Error & { status?: number }}  Non-2xx responses carry the HTTP status (401 = token expired).
  */
-export async function createEvent(accessToken, { summary, description = '', start, end, attendees, timeZone }) {
+export async function createEvent(accessToken, { summary, description = '', start, end, attendees, organizer, timeZone }) {
   const tz = timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const isOrganizer = (email) => organizer && email.toLowerCase() === organizer.toLowerCase();
   const body = {
     summary,
     description,
     start: { dateTime: new Date(start).toISOString(), timeZone: tz },
     end: { dateTime: new Date(end).toISOString(), timeZone: tz },
-    attendees: [...new Set(attendees)].map((email) => ({ email })),
+    attendees: [...new Set(attendees)].map((email) => (isOrganizer(email) ? { email, responseStatus: 'accepted' } : { email })),
   };
   // sendUpdates=all → Google emails the invite to attendees (the SE), like a hand-made event.
   const res = await fetch(`${EVENTS_URL}?sendUpdates=all`, {

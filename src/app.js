@@ -709,6 +709,7 @@ async function book_(start, end, se, intake) {
       start,
       end,
       attendees: [me, se, ...intake.prospectEmails],
+      organizer: me, // the AE's own entry is pre-accepted; everyone else gets a normal invite
     });
   } catch (err) {
     bookingInFlight = false;
