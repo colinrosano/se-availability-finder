@@ -26,7 +26,7 @@ export const MODULES = Object.keys(PRODUCTS).filter((k) => k !== 'full_platform'
 
 const MIN = 60_000;
 const QUARTER_MS = 15 * MIN;
-export const CHIP_STEP_MIN = 30;
+export const CHIP_STEP_MIN = 15; // Project Plan §11: 30 by default, "can be loosened to 15 if the pilot shows demand" — trying 15
 
 /** Full Platform wins outright; all six modules collapse to it. */
 export function normalizeProducts(keys) {
@@ -114,4 +114,20 @@ export function sesFreeFor(seFree, start, end) {
   return Object.entries(seFree)
     .filter(([, ivs]) => ivs.some((iv) => iv.start <= start && iv.end >= end))
     .map(([email]) => email);
+}
+
+/**
+ * Valid start times for ONE grid block (§11): quarter-hour aligned, stepping every `stepMin`,
+ * starting inside the block. A start is valid when at least one SE is free for the whole slot —
+ * the slot may run past the block's edge, since blocks only split where the set of free SEs
+ * changes, and the SE assigned at booking is drawn from exactly this per-slot check.
+ * @returns {number[]} epoch ms, ascending
+ */
+export function validStarts(block, seFree, durationMin, stepMin = CHIP_STEP_MIN) {
+  const durMs = durationMin * MIN;
+  const out = [];
+  for (let t = snapUpToQuarter(block.start); t < block.end; t += stepMin * MIN) {
+    if (sesFreeFor(seFree, t, t + durMs).length) out.push(t);
+  }
+  return out;
 }

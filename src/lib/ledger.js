@@ -9,10 +9,13 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** @typedef {{ se: string, at: string }} LedgerEntry  at = ISO timestamp */
 
-/** All retained entries, oldest first. Never throws; an unreadable ledger reads as empty. */
-export async function readLedger() {
+/**
+ * All retained entries, oldest first. Never throws; an unreadable ledger reads as empty.
+ * `key` exists so localhost fixture mode can keep its fake bookings in a separate ledger.
+ */
+export async function readLedger({ key = LEDGER_KEY } = {}) {
   try {
-    const value = await store().get(LEDGER_KEY);
+    const value = await store().get(key);
     return Array.isArray(value) ? value.filter((e) => e && typeof e.se === 'string' && typeof e.at === 'string') : [];
   } catch {
     return [];
@@ -24,10 +27,10 @@ export async function readLedger() {
  * Read-modify-write; two AEs booking in the same instant may lose one entry (accepted, §10).
  * @returns {Promise<LedgerEntry[]>} the ledger after the write
  */
-export async function recordAssignment(se, at = new Date()) {
+export async function recordAssignment(se, at = new Date(), { key = LEDGER_KEY } = {}) {
   const cutoff = Date.now() - LEDGER_RETENTION_DAYS * DAY_MS;
-  const entries = (await readLedger()).filter((e) => Date.parse(e.at) >= cutoff);
+  const entries = (await readLedger({ key })).filter((e) => Date.parse(e.at) >= cutoff);
   entries.push({ se, at: new Date(at).toISOString() });
-  await store().set(LEDGER_KEY, entries);
+  await store().set(key, entries);
   return entries;
 }

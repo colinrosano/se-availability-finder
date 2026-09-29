@@ -94,6 +94,22 @@ On localhost:
   store, so nothing you save locally affects the deployed app.
 - Booking creates a **real** event and sends **real** invites. Book something you'll delete.
 
+### Fixture mode: synthetic calendars for specific scenarios
+
+Real calendars rarely produce the edge cases the grid has to handle (blocks split where the set of
+free SEs changes, short unaligned blocks, adjacent blocks with different SEs). Fixture mode feeds
+synthetic busy data through the real pipeline instead:
+
+```
+http://localhost:5173/?fixture=segments
+```
+
+It works **only on localhost and only with that query parameter**. It skips Google sign-in, makes
+you a fake non-SE AE so both SEs appear, swaps the FreeBusy fetch for the fixture's data, turns
+Book into a no-op that creates nothing, and keeps its bookings in a separate ledger. A banner says
+so. Remove the parameter for live data. Scenarios are defined in `src/dev/fixtures.js`, which is
+excluded from the Archie zip; navigate to a week that isn't mostly in the past to see all of them.
+
 ## Configuration
 
 All in `src/lib/config.js`:
@@ -142,7 +158,7 @@ owners in the portal, so the collaborator step succeeds for either assignment.
 Archie serves a zip whose root is `index.html`. Deploy only when asked to.
 
 ```bash
-cd src && zip -r ../app.zip . -x '*.test.js' -x '.DS_Store'
+cd src && zip -r ../app.zip . -x '*.test.js' -x 'dev/*' -x '.DS_Store'
 ```
 
 Then publish with the `archie-deploy` skill's `scripts/publish.sh` and a deploy token from the
