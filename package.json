@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test \"src/lib/**/*.test.js\"",
-    "dev": "npx serve -l 5173 src"
+    "dev": "npx serve -l 5173 src",
+    "dev:hubspot": "node scripts/dev-proxy.mjs"
   }
 }

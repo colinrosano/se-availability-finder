@@ -968,3 +968,32 @@ h2 {
     display: none;
   }
 }
+
+/* ---- HubSpot deal link status ---- */
+.field-status {
+  font-size: 0.78rem;
+  color: var(--gray);
+  min-height: 1em;
+}
+
+.field-status:empty {
+  display: none;
+}
+
+.field-status.is-ok {
+  color: var(--green);
+}
+
+.field-status.is-error {
+  color: var(--error);
+}
+
+.field input:read-only:not([type='url']) {
+  background: var(--light-violet);
+  color: var(--gray);
+}
+
+.notice-action {
+  margin-left: 0.25rem;
+  vertical-align: middle;
+}

@@ -1,5 +1,6 @@
 // UI for the week grid and booking intake. All DOM code lives here; the data layer is in ./lib/.
-import { DURATION_OPTIONS } from './lib/config.js';
+import { DURATION_OPTIONS, HUBSPOT } from './lib/config.js';
+import { parseDealUrl, isExpectedPortal, getDeal, findOwnerIdByEmail, addCollaborator } from './lib/hubspot.js';
 import { loadSettings, saveSettings, defaultSettings, isAdmin } from './lib/settings.js';
 import { requestAccessToken, getMe } from './lib/auth.js';
 import { loadAvailability, computeAvailability } from './lib/availability.js';
@@ -7,7 +8,6 @@ import { weekBounds, defaultWeekOf, addWeeks } from './lib/businessDays.js';
 import {
   PRODUCTS,
   CALL_TYPES,
-  MODULES,
   normalizeProducts,
   buildEventTitle,
   buildEventDescription,
@@ -40,6 +40,9 @@ let bookingInFlight = false;
 let flash = null; // a notice that survives the next grid reload (e.g. "Booked ✓")
 let settings = defaultSettings(); // roster + business hours; replaced by the stored value at boot
 let nameByEmail = new Map();
+let linkedDeal = null; // { id, name, stageLabel, companyName, url } once a pasted deal link resolves
+let dealLookupSeq = 0; // ignore stale lookups when the link changes mid-flight
+let dealDebounce = null;
 
 // ---- Elements ----
 const $ = (id) => document.getElementById(id);
@@ -59,6 +62,7 @@ const els = {
   company: $('company'),
   prospects: $('prospects'),
   dealUrl: $('deal-url'),
+  dealStatus: $('deal-status'),
   titlePreview: $('title-preview'),
   notices: $('notices'),
   grid: $('grid'),
@@ -107,7 +111,7 @@ els.jump.addEventListener('change', () => {
 els.copySlots.addEventListener('click', copySlots);
 els.callType.addEventListener('change', onIntakeChange);
 els.company.addEventListener('input', onIntakeChange);
-els.dealUrl.addEventListener('input', onIntakeChange);
+els.dealUrl.addEventListener('input', onDealInput);
 els.prospects.addEventListener('input', onIntakeChange);
 els.products.addEventListener('change', onProductChange);
 els.settingsBtn.addEventListener('click', openSettings);
@@ -469,8 +473,10 @@ function readIntake() {
     productKeys: normalizeProducts([...els.products.querySelectorAll('input:checked')].map((b) => b.value)),
     durationMin: minMinutes,
     companyName: els.company.value,
-    // Optional in v1.5; becomes required and drives company name + Deal Collaborator in v2 (§12).
+    // v2 (§12): a resolved deal fills the company name and gets the SE as Deal Collaborator on Book.
+    // Optional while HUBSPOT.required is false (test phase); required at go-live.
     dealUrl: els.dealUrl.value.trim(),
+    deal: linkedDeal,
     // Optional (Colin, Sep 2026, overriding §11 "AE + SE only"): prospects invited at Book time.
     // Used transiently for the attendee list; never stored.
     ...(() => {
@@ -478,6 +484,92 @@ function readIntake() {
       return { prospectEmails: emails, invalidProspects: invalid };
     })(),
   };
+}
+
+// ---- HubSpot deal link ----
+
+/** Debounced: parse the link, verify the portal, look the deal up, fill the company name. */
+function onDealInput() {
+  clearTimeout(dealDebounce);
+  const url = els.dealUrl.value.trim();
+  const seq = ++dealLookupSeq;
+  setLinkedDeal(null);
+  if (!url) {
+    setDealStatus('');
+    onIntakeChange();
+    return;
+  }
+  const ref = parseDealUrl(url);
+  if (!ref) {
+    setDealStatus('Not a HubSpot deal link.', 'error');
+    onIntakeChange();
+    return;
+  }
+  if (!isExpectedPortal(ref.portalId)) {
+    setDealStatus('That link is for a different HubSpot portal.', 'error');
+    onIntakeChange();
+    return;
+  }
+  setDealStatus('Looking up the deal…');
+  onIntakeChange();
+  dealDebounce = setTimeout(async () => {
+    try {
+      const deal = await getDeal(ref.dealId);
+      if (seq !== dealLookupSeq) return; // link changed while we were fetching
+      setLinkedDeal({ ...deal, url });
+      const parts = [deal.name || `Deal ${deal.id}`, deal.stageLabel, deal.companyName].filter(Boolean);
+      setDealStatus(`✓ ${parts.join(' · ')} — correct deal?`, 'ok');
+    } catch (err) {
+      if (seq !== dealLookupSeq) return;
+      setDealStatus(err.status === 404 ? 'Deal not found in HubSpot.' : `Couldn't look up the deal (${err.message}).`, 'error');
+    }
+    onIntakeChange();
+  }, 400);
+}
+
+/** A resolved deal supplies the company name (read-only while linked); clearing it hands the field back. */
+function setLinkedDeal(deal) {
+  linkedDeal = deal;
+  if (deal?.companyName) {
+    els.company.value = deal.companyName;
+    els.company.readOnly = true;
+    els.company.title = 'From the linked HubSpot deal';
+  } else {
+    els.company.readOnly = false;
+    els.company.title = '';
+  }
+}
+
+function setDealStatus(text, kind = '') {
+  els.dealStatus.textContent = text;
+  els.dealStatus.className = `field-status${kind ? ` is-${kind}` : ''}`;
+  els.dealUrl.setAttribute('aria-invalid', String(kind === 'error'));
+}
+
+/**
+ * After the event exists: append the assigned SE to the deal's collaborators. Returns a flash
+ * notice describing the outcome; a failure gets a Retry action rather than being hidden (§12).
+ */
+async function attachCollaborator(deal, se, base) {
+  try {
+    const ownerId = await findOwnerIdByEmail(se);
+    if (!ownerId) throw new Error(`${fullName(se)} is not a user in this HubSpot portal`);
+    await addCollaborator(deal.id, ownerId);
+    return { ...base, text: `${base.text} ${fullName(se)} set as Deal Collaborator on ${deal.name}.` };
+  } catch (err) {
+    return {
+      ...base,
+      kind: 'warn',
+      text: `${base.text} But ${fullName(se)} could not be set as Deal Collaborator on ${deal.name} (${err.message}). Retry, or set it manually in HubSpot.`,
+      action: {
+        label: 'Retry',
+        run: async () => {
+          flash = await attachCollaborator(deal, se, base);
+          if (data) renderPeopleNotices();
+        },
+      },
+    };
+  }
 }
 
 function onIntakeChange() {
@@ -569,7 +661,9 @@ function renderSummary(start, end) {
   box.append(row('Title', complete ? buildEventTitle(intake) : 'Complete the form above to set the title', !complete));
   // The title may say "Multi-Product"; the description (shown to the SE) always lists the modules.
   if (complete) box.append(row('Products', buildEventDescription(intake).replace(/^Products: /, '')));
-  if (intake.dealUrl) box.append(row('Deal', intake.dealUrl));
+  if (intake.deal) box.append(row('Deal', [intake.deal.name, intake.deal.stageLabel].filter(Boolean).join(' · ')));
+  else if (intake.dealUrl) box.append(row('Deal', 'Link not resolved — no collaborator will be set', true));
+  const needsDeal = HUBSPOT.required && !intake.deal;
   const badProspects = intake.invalidProspects.length > 0;
   if (badProspects) box.append(row('Prospects', `Not an email: ${intake.invalidProspects.join(', ')}`, true));
   else if (intake.prospectEmails.length) {
@@ -577,12 +671,13 @@ function renderSummary(start, end) {
     box.append(el('p', { className: 'muted summary-note', textContent: 'They get the invite when you click Book. No meeting link is attached yet — add Zoom in Google Calendar afterwards.' }));
   }
 
-  const canBook = complete && pick && !badProspects && !bookingInFlight;
+  const canBook = complete && pick && !badProspects && !needsDeal && !bookingInFlight;
   const book = el('button', { className: 'btn btn-primary', type: 'button', disabled: !canBook });
   book.textContent = bookingInFlight ? 'Booking…' : 'Book';
   if (!complete) book.title = 'Complete the form above to book';
   else if (!pick) book.title = 'No SE is free for this slot';
   else if (badProspects) book.title = 'Fix the prospect emails to book';
+  else if (needsDeal) book.title = 'Link a HubSpot deal to book';
   book.addEventListener('click', () => book_(start, end, pick.se, intake));
   box.append(book);
   return box;
@@ -645,6 +740,8 @@ async function book_(start, end, se, intake) {
       link: { href: event.htmlLink, label: 'Open in Google Calendar' },
     };
   }
+  // v2: event first, collaborator second; a failure here is reported with a Retry, never hidden.
+  if (intake.deal) flash = await attachCollaborator(intake.deal, se, flash);
   bookingInFlight = false;
   closePopover();
   await load(); // the new event now shows as busy time
@@ -781,6 +878,14 @@ function setNotices(items) {
     ...items.map((n) => {
       const d = el('div', { className: `notice notice-${n.kind}`, textContent: n.text });
       if (n.link) d.append(' ', el('a', { href: n.link.href, target: '_blank', rel: 'noopener', textContent: n.link.label }));
+      if (n.action) {
+        const b = el('button', { className: 'btn btn-ghost btn-small notice-action', type: 'button', textContent: n.action.label });
+        b.addEventListener('click', async () => {
+          b.disabled = true;
+          await n.action.run();
+        });
+        d.append(' ', b);
+      }
       return d;
     }),
   );
