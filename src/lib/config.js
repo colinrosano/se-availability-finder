@@ -31,14 +31,13 @@ export const DEV_EMAIL = 'creinhardt@osano.com';
 export const BUSINESS_HOURS = { start: [8, 30], end: [17, 30] };
 
 // ---- HubSpot (v2, Project Plan §12) ----
-// ⚠️ PLACEHOLDER — TEST ONLY. `portalId` is Colin's personal free HubSpot portal, used to exercise
-// the integration before IT issues a private-app token for Osano's portal. The token itself is
-// NEVER in code: on Archie it lives in the secrets vault under `secretName` and every call goes
-// through archie.secrets.proxy; locally, scripts/dev-proxy.mjs injects it from an env var.
-// Go-live swap: (1) portalId → Osano's portal, (2) `archie.secrets.set('hubspot', <IT token>)`
-// from the deployed app's console, (3) required → true so bookings must link a deal.
+// `portalId` is Osano's production portal ("Osano (Production)"). The private-app token is NEVER
+// in code: on Archie it lives in the secrets vault under `secretName` and every call goes through
+// archie.secrets.proxy; locally, scripts/dev-proxy.mjs injects it from the HUBSPOT_TOKEN env var.
+// Rotate it with `archie.secrets.set('hubspot', <token>)` from the deployed app's console.
+// `required`: when true, Book refuses without a linked deal (the plan's v2 rule).
 export const HUBSPOT = {
-  portalId: '244307193',
+  portalId: '4785246',
   secretName: 'hubspot',
   required: false,
   devProxy: 'http://localhost:8787', // scripts/dev-proxy.mjs, localhost only

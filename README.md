@@ -110,7 +110,7 @@ All in `src/lib/config.js`:
 Google Cloud side (already provisioned): Calendar API enabled, consent screen **Internal**,
 authorised JavaScript origins `http://localhost:5173` and `https://creinhardt.archie.osano.dev`.
 
-## HubSpot (v2) — currently on a placeholder portal
+## HubSpot (v2)
 
 Pasting a HubSpot deal link into the intake looks the deal up, shows "name · stage · company"
 so the AE can confirm the record, fills the company name from the deal, and after booking
@@ -128,14 +128,12 @@ that last step fails, the booking notice says so and offers Retry.
   HUBSPOT_TOKEN=pat-… npm run dev:hubspot     # http://localhost:8787 → api.hubapi.com
   ```
 
-**⚠️ Placeholder.** `HUBSPOT.portalId` in `src/lib/config.js` is currently Colin's personal free
-HubSpot portal, used only to exercise the integration before IT issues a private-app token for
-Osano's portal (Project Plan §12). At go-live: set `portalId` to Osano's portal, store the IT
-token as the `hubspot` secret, and set `HUBSPOT.required = true` so bookings must link a deal.
-Nothing else changes. Until then, SEs who aren't users in the test portal (everyone but Colin)
-will hit the "couldn't set Deal Collaborator — Retry" path, which is expected.
+`HUBSPOT.portalId` in `src/lib/config.js` is Osano's production portal. Links from any other
+portal are rejected before any lookup. `HUBSPOT.required` decides whether a booking must link a
+deal (the Project Plan's v2 rule); it starts off during the pilot.
 
-Private-app scopes needed: deals read/write, companies read, owners read.
+Private-app scopes needed: deals read/write, companies read, owners read. Both SEs resolve as
+owners in the portal, so the collaborator step succeeds for either assignment.
 
 ## Deploying to Archie
 
