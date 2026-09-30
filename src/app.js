@@ -19,7 +19,7 @@ import {
 import { pickSE, ledgerStats } from './lib/assignment.js';
 import { readLedger, recordAssignment } from './lib/ledger.js';
 import { createEvent } from './lib/events.js';
-import { formatSlotsText, formatStartsText, forDay, mergeRuns } from './lib/slotsText.js';
+import { formatSlotsText, formatStartsText, forDay } from './lib/slotsText.js';
 
 const PX_PER_MIN = 1; // grid scale: 1 minute = 1px → a 9-hour day is 540px tall
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -35,7 +35,7 @@ let weekOf = defaultWeekOf(new Date());
 let minMinutes = readPref(); // doubles as the booking duration (Project Plan §11)
 let data = null; // last successful loadAvailability() result
 let ledger = []; // SE assignment ledger entries, for the fairness pick
-let picked = null; // { segment, start } while the popover is open
+let picked = null; // { block, start } while the popover is open
 let bookingInFlight = false;
 let flash = null; // a notice that survives the next grid reload (e.g. "Booked ✓")
 
@@ -103,7 +103,6 @@ const els = {
 };
 
 const fullName = (email) => nameByEmail.get(email) ?? email;
-const firstName = (email) => fullName(email).split(' ')[0];
 const hours = () => settings.businessHours;
 
 // ---- Boot ----
@@ -354,17 +353,18 @@ function renderThemeButton() {
 
 /** ALL: every window on screen (this week, at the current duration filter). */
 async function copySlots() {
-  const text = formatSlotsText(data?.offerable ?? []);
-  const n = mergeRuns(data?.offerable ?? []).length;
+  const blocks = data?.offerable ?? [];
+  const text = formatSlotsText(blocks);
+  const n = blocks.length;
   await copyToClipboard(text, `Copied ${n} window${n === 1 ? '' : 's'} when you and an SE are both free.`, els.copySlots);
 }
 
 /** DAY: one column's windows. */
 async function copyDay(dayKey, btn) {
-  const segs = forDay(data?.offerable ?? [], dayKey);
-  const text = formatSlotsText(segs);
-  const n = mergeRuns(segs).length;
-  const label = new Date(segs[0]?.start ?? Date.now()).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  const blocks = forDay(data?.offerable ?? [], dayKey);
+  const text = formatSlotsText(blocks);
+  const n = blocks.length;
+  const label = new Date(blocks[0]?.start ?? Date.now()).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
   await copyToClipboard(text, `Copied ${n} window${n === 1 ? '' : 's'} for ${label}.`, btn);
 }
 
@@ -720,8 +720,8 @@ function updateTitlePreview() {
 // ---- Popover: start-time chips + assignment preview ----
 
 /** The popover belongs to the clicked block (§11): its chips are the valid starts inside that block. */
-function openPopover(segment, blockEl) {
-  picked = { segment, start: null };
+function openPopover(block, blockEl) {
+  picked = { block, start: null };
   renderPopover();
   positionPopover(blockEl);
 }
@@ -733,15 +733,16 @@ function closePopover() {
 }
 
 function renderPopover() {
-  const { segment, start } = picked;
+  const { block, start } = picked;
   const durMs = minMinutes * 60_000;
-  // Starts inside this block whose whole slot some SE can cover (the slot may run past the block).
-  const chips = validStarts(segment, data.seFree, minMinutes);
-  const day = new Date(segment.start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  // Starts inside this block where ONE SE can cover the whole slot (which may run past the block).
+  // A start no single SE covers is omitted, even if two SEs together would span it.
+  const chips = validStarts(block, data.seFree, minMinutes);
+  const day = new Date(block.start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 
   const head = el('div', { className: 'popover-head' });
   head.append(
-    el('div', { className: 'popover-title', textContent: `${day} · ${fmtTime(segment.start)} – ${fmtTime(segment.end)}` }),
+    el('div', { className: 'popover-title', textContent: `${day} · ${fmtTime(block.start)} – ${fmtTime(block.end)}` }),
     el('button', { className: 'popover-close', type: 'button', textContent: '×', ariaLabel: 'Close' }),
   );
   head.querySelector('.popover-close').addEventListener('click', closePopover);
@@ -996,12 +997,10 @@ function renderWindows() {
     const block = el('button', { className: 'window', type: 'button' });
     block.style.top = `${top}px`;
     block.style.height = `${height}px`;
-    // "You" first: every window is the viewer's free time intersected with the named SEs'.
-    block.title = `${fmtTime(w.start)} – ${fmtTime(w.end)} · you and ${w.ses.map(fullName).join(', ')} are free — click to pick a start time`;
-    block.append(
-      el('span', { className: 'window-time', textContent: `${fmtTime(w.start)} – ${fmtTime(w.end)}` }),
-      el('span', { className: 'window-ses', textContent: ['You', ...w.ses.map(firstName)].join(' · ') }),
-    );
+    // One block per contiguous span where the viewer and at least one SE are free. Which SE is
+    // free for a given slot is decided in the popover, one start time at a time.
+    block.title = `${fmtTime(w.start)} – ${fmtTime(w.end)} · you and an SE are free — click to pick a start time`;
+    block.append(el('span', { className: 'window-time', textContent: `${fmtTime(w.start)} – ${fmtTime(w.end)}` }));
     if (height < 40) block.classList.add('is-short');
     block.addEventListener('click', () => openPopover(w, block));
     col.append(block);

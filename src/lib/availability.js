@@ -15,14 +15,15 @@ import { validStarts } from './booking.js';
  * @param {{ minMs?: number }} [opts]  Minimum meeting length; a window must fit a call with ONE SE.
  * @returns {{
  *   people: Array<{ id: string, error?: string, busy?: Interval[], free?: Interval[] }>,
- *   offerable: Array<{ start: number, end: number, ses: string[] }>,
- *     // AE free AND at least one SE free for >= minMs (locked product rule: one SE per call).
- *     // Split wherever the set of available SEs changes, so each segment is labeled accurately.
- *     // Only segments with at least one valid quarter-aligned start (booking.js validStarts) are
- *     // kept, so every block on the grid opens to a non-empty popover (§11).
+ *   offerable: Array<{ start: number, end: number }>,
+ *     // Contiguous spans where the AE and at least one SE are free, merged across SE handoffs.
+ *     // The union is only for DRAWING the block: every bookable start inside it is checked
+ *     // against one SE at a time (booking.js validStarts / sesFreeFor), so two SEs' short gaps
+ *     // never combine into a slot nobody can take. Blocks with no valid quarter-aligned start
+ *     // are dropped, so every block on the grid opens to a non-empty popover (§11).
  *   seFree: Record<string, Interval[]>
- *     // Each readable SE's overlap with the AE (>= minMs). Lets the UI check who is free for
- *     // one specific slot, which may span two labeled segments (see booking.js sesFreeFor).
+ *     // Each readable SE's overlap with the AE (>= minMs): the source of truth for which SE can
+ *     // cover one specific slot, which may run past the block's edge.
  * }}
  */
 export function computeAvailability(ids, calendars, windows, { minMs = MIN_FREE_MS } = {}) {
@@ -55,37 +56,20 @@ export function computeAvailability(ids, calendars, windows, { minMs = MIN_FREE_
       .map((p) => ({ id: p.id, intervals: intersectIntervals(ae.free, p.free, minMs) }));
     for (const p of perSe) seFree[p.id] = p.intervals;
     const durationMin = minMs / 60_000;
-    offerable = labelSegments(perSe).filter((seg) => validStarts(seg, seFree, durationMin).length > 0);
+    offerable = mergeBlocks(perSe).filter((block) => validStarts(block, seFree, durationMin).length > 0);
   }
 
   return { people, offerable, seFree };
 }
 
 /**
- * Pure. Merge per-SE interval lists into one timeline, split at every point where the set of
- * available SEs changes. Input intervals per SE must be sorted and non-overlapping.
+ * Pure. Merge every SE's intervals into one timeline of contiguous blocks, joining touching or
+ * overlapping spans regardless of which SE covers them.
+ * @param {Array<{ id: string, intervals: Interval[] }>} perSe
+ * @returns {Array<{ start: number, end: number }>}  sorted, non-overlapping
  */
-export function labelSegments(perSe) {
-  const bounds = [...new Set(perSe.flatMap((p) => p.intervals.flatMap((iv) => [iv.start, iv.end])))].sort(
-    (a, b) => a - b,
-  );
-  const out = [];
-  for (let i = 0; i < bounds.length - 1; i++) {
-    const start = bounds[i];
-    const end = bounds[i + 1];
-    const ses = perSe
-      .filter((p) => p.intervals.some((iv) => iv.start <= start && iv.end >= end))
-      .map((p) => p.id);
-    if (!ses.length) continue;
-    const last = out[out.length - 1];
-    if (last && last.end === start && sameSet(last.ses, ses)) last.end = end;
-    else out.push({ start, end, ses });
-  }
-  return out;
-}
-
-function sameSet(a, b) {
-  return a.length === b.length && a.every((x) => b.includes(x));
+export function mergeBlocks(perSe) {
+  return mergeIntervals(perSe.flatMap((p) => p.intervals));
 }
 
 /**

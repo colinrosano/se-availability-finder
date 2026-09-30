@@ -470,23 +470,11 @@ h2 {
   white-space: nowrap;
 }
 
-.window-ses {
-  font-size: 0.78rem;
-  opacity: 0.92;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .window.is-short {
   flex-direction: row;
   align-items: center;
   gap: 6px;
   padding: 0 8px;
-}
-
-.window.is-short .window-ses::before {
-  content: '· ';
 }
 
 /* ---- Overlay states ---- */
@@ -962,10 +950,6 @@ h2 {
   .grid-header,
   .grid-body {
     grid-template-columns: 44px repeat(5, 1fr);
-  }
-
-  .window-ses {
-    display: none;
   }
 }
 
