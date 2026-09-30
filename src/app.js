@@ -19,7 +19,7 @@ import {
 import { pickSE, ledgerStats } from './lib/assignment.js';
 import { readLedger, recordAssignment } from './lib/ledger.js';
 import { createEvent } from './lib/events.js';
-import { formatSlotsText, mergeRuns } from './lib/slotsText.js';
+import { formatSlotsText, formatStartsText, forDay, mergeRuns } from './lib/slotsText.js';
 
 const PX_PER_MIN = 1; // grid scale: 1 minute = 1px → a 9-hour day is 540px tall
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -349,18 +349,46 @@ function renderThemeButton() {
 
 // ---- Copy available times ----
 
-/** Paste-ready text of the windows on screen (this week, at the current duration filter). */
+// Three scopes (Project Plan §9), one formatter: ALL (the button by the week nav), DAY (the icon on
+// each day header), BLOCK (the button in the popover — start times, already duration-filtered).
+
+/** ALL: every window on screen (this week, at the current duration filter). */
 async function copySlots() {
   const text = formatSlotsText(data?.offerable ?? []);
+  const n = mergeRuns(data?.offerable ?? []).length;
+  await copyToClipboard(text, `Copied ${n} window${n === 1 ? '' : 's'} when you and an SE are both free.`, els.copySlots);
+}
+
+/** DAY: one column's windows. */
+async function copyDay(dayKey, btn) {
+  const segs = forDay(data?.offerable ?? [], dayKey);
+  const text = formatSlotsText(segs);
+  const n = mergeRuns(segs).length;
+  const label = new Date(segs[0]?.start ?? Date.now()).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  await copyToClipboard(text, `Copied ${n} window${n === 1 ? '' : 's'} for ${label}.`, btn);
+}
+
+/** BLOCK: the valid start times in the open popover, for the current duration. */
+async function copyBlockStarts(starts, btn) {
+  const text = formatStartsText(starts, minMinutes);
+  await copyToClipboard(text, `Copied this block's times for a ${minMinutes}-minute call.`, btn);
+}
+
+/** Write to the clipboard, flip the button label briefly, and toast; fall back to a selectable textarea. */
+async function copyToClipboard(text, toastText, btn) {
   if (!text) return;
-  const btn = els.copySlots;
   try {
     await navigator.clipboard.writeText(text);
-    const label = btn.textContent;
-    btn.textContent = 'Copied';
-    setTimeout(() => (btn.textContent = label), 2000);
-    const n = mergeRuns(data.offerable).length;
-    toast(`Copied ${n} window${n === 1 ? '' : 's'} when you and an SE are both free.`);
+    if (btn) {
+      const label = btn.textContent;
+      btn.textContent = 'Copied';
+      btn.classList.add('is-copied');
+      setTimeout(() => {
+        btn.textContent = label;
+        btn.classList.remove('is-copied');
+      }, 2000);
+    }
+    toast(toastText);
   } catch {
     // Clipboard blocked (permissions, insecure context): show the text so it can be selected by hand.
     const box = el('div', { className: 'notice notice-warn' });
@@ -733,6 +761,12 @@ function renderPopover() {
   }
 
   els.popover.replaceChildren(head, el('p', { className: 'popover-hint', textContent: `Start time (${minMinutes} min)` }), chipsEl);
+  if (chips.length) {
+    const copyBtn = el('button', { className: 'btn btn-ghost btn-small popover-copy', type: 'button', textContent: 'Copy these times' });
+    copyBtn.title = 'Copy these start times as text for a prospect email';
+    copyBtn.addEventListener('click', () => copyBlockStarts(chips, copyBtn));
+    els.popover.append(copyBtn);
+  }
   if (start != null) els.popover.append(renderSummary(start, start + durMs));
   els.popover.hidden = false;
 }
@@ -905,9 +939,16 @@ function renderGridSkeleton() {
     days.push(d);
     const isToday = d.toDateString() === todayKey;
     const h = el('div', { className: `day-head${isToday ? ' is-today' : ''}` });
+    const dayKey = d.toDateString();
+    const copy = el('button', { className: 'day-copy', type: 'button', textContent: '⧉', disabled: true });
+    copy.title = `Copy ${DAY_NAMES[i]}'s available times`;
+    copy.setAttribute('aria-label', copy.title);
+    copy.dataset.day = dayKey;
+    copy.addEventListener('click', () => copyDay(dayKey, copy));
     h.append(
       el('span', { className: 'day-name', textContent: DAY_NAMES[i] }),
       el('span', { className: 'day-num', textContent: String(d.getDate()) }),
+      copy,
     );
     header.append(h);
   }
@@ -967,6 +1008,9 @@ function renderWindows() {
   }
 
   els.copySlots.disabled = data.offerable.length === 0;
+  // Day copy icons light up only for days that have something to copy.
+  const daysWithWindows = new Set(data.offerable.map((w) => new Date(w.start).toDateString()));
+  for (const b of els.grid.querySelectorAll('.day-copy')) b.disabled = !daysWithWindows.has(b.dataset.day);
   if (data.offerable.length) hideOverlay();
   else showOverlay('empty');
 }

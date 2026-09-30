@@ -1054,3 +1054,56 @@ h2 {
   text-decoration: none;
   display: inline-block;
 }
+
+/* ---- Copy scopes: day-header icon and popover button (Project Plan §9) ---- */
+.day-head {
+  position: relative;
+}
+
+.day-copy {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--purple-text);
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.day-copy:hover:not(:disabled),
+.day-copy:focus-visible {
+  opacity: 1;
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+.day-copy:disabled {
+  opacity: 0.2;
+  cursor: default;
+}
+
+.day-copy.is-copied {
+  font-size: 0.7rem;
+  width: auto;
+  padding: 0 0.35rem;
+  opacity: 1;
+  color: var(--green);
+}
+
+.popover-copy {
+  margin-top: 0.6rem;
+}
+
+.popover-copy.is-copied,
+#copy-slots.is-copied {
+  color: var(--green);
+  border-color: var(--green);
+}
