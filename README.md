@@ -23,7 +23,10 @@ Hosted on Osano's Archie platform. Pilot URL: https://creinhardt.archie.osano.de
   14 days is assigned; ties go to the least recently assigned, then random. No override.
 - **Admin panel** (allow-listed emails only): edit the SE roster and business hours, and see
   per-SE booking statistics from the assignment ledger.
-- **Copy available times** as paste-ready text for a prospect email.
+- **Copy available times** as paste-ready text for a prospect email, at three scopes: the whole
+  visible week (button by the week nav), one day (icon on the day header), or the start times of
+  one block (button in the popover, already filtered to the chosen duration). Always in the AE's
+  zone with a label, never naming SEs.
 - Light and dark mode.
 
 ## How it works
