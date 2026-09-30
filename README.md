@@ -194,6 +194,8 @@ Deploying to a different namespace requires adding that origin to the OAuth clie
 
 ## Status
 
-v1 (availability) and v1.5 (booking + fair assignment + admin settings) are built and deployed
-for a restricted pilot. v2 (HubSpot deal linking and Deal Collaborator attribution) waits on
-IT approval for a HubSpot private-app token. Meeting links (Zoom) are an open decision.
+v1 (availability), v1.5 (booking + fair assignment + admin settings), and v2 (HubSpot deal
+linking and Deal Collaborator attribution) are built, verified end to end against Osano's
+production HubSpot portal, and deployed for a restricted pilot (Colin plus an allow-list of
+pilot AEs and SEs; last redeployed Sep 30 2026). The deal link stays optional until
+`HUBSPOT.required` is switched on. Meeting links (Zoom) are an open decision.
