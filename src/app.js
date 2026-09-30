@@ -832,10 +832,13 @@ async function book_(start, end, se, intake) {
   }
   // v2: event first, collaborator second; a failure here is reported with a Retry, never hidden.
   if (intake.deal) flash = await attachCollaborator(intake.deal, se, flash);
+  // A clean booking is confirmed by the reminder dialog alone (it carries the event link). The
+  // notice above the grid is kept only for partial failures, since those need to outlive the dialog
+  // (ledger not recorded, or the Deal Collaborator step with its Retry).
+  if (flash?.kind === 'success') flash = null;
   bookingInFlight = false;
   closePopover();
   await load(); // the new event now shows as busy time
-  // The reminder opens over the refreshed grid; the notice above the grid remains as the record.
   showBookedDialog({ summary, when, se, event, deal: intake.deal });
 }
 
