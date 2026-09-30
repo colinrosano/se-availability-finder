@@ -59,3 +59,12 @@ test('a throwing store reads as [] rather than breaking the page', async () => {
   globalThis.archie = { kv: { async get() { throw new Error('kv down'); }, async set() {} } };
   assert.deepEqual(await readLedger(), []);
 });
+
+test('a custom key keeps a separate ledger (fixture mode never touches the real one)', async () => {
+  const kv = fakeKv();
+  globalThis.archie = { kv };
+  await recordAssignment('a@osano.com', new Date(), { key: 'ledger:fixture' });
+  assert.deepEqual(await readLedger(), []);
+  assert.equal((await readLedger({ key: 'ledger:fixture' })).length, 1);
+  assert.deepEqual(Object.keys(kv.dump()), ['ledger:fixture']);
+});

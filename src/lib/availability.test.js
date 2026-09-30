@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeAvailability, labelSegments } from './availability.js';
+import { computeAvailability, labelSegments, loadAvailability } from './availability.js';
 
 // One business window: Wed 2026-09-23, 9 AM – 5 PM local.
 const t = (h, m = 0) => new Date(2026, 8, 23, h, m).getTime();
@@ -129,4 +129,39 @@ test('labelSegments: empty input, and touching intervals with the same SE merge'
   assert.deepEqual(labelSegments([]), []);
   const seg = labelSegments([{ id: SE1, intervals: [{ start: 0, end: 10 }, { start: 10, end: 20 }] }]);
   assert.deepEqual(seg, [{ start: 0, end: 20, ses: [SE1] }]);
+});
+
+test('segments with no valid quarter-aligned start are hidden (§11: no empty popovers)', () => {
+  // SE1 free only 10:07–10:40 (33 min): passes the 30-min length filter, but no aligned 30-min start fits.
+  const calendars = {
+    [AE]: { busy: [] },
+    [SE1]: busy([[9], [10, 7]], [[10, 40], [17]]),
+  };
+  const { offerable, seFree } = computeAvailability([AE, SE1], calendars, windows, { minMs: 30 * MIN });
+  assert.deepEqual(seFree[SE1], [{ start: t(10, 7), end: t(10, 40) }], 'the SE overlap itself is still reported');
+  assert.deepEqual(offerable, []);
+});
+
+test('a label-split segment shorter than the duration stays when a start inside it is bookable with one SE', () => {
+  // Colin free 10–11, John free 10:30–11:30, 60-min duration → 10:00 (Colin) and 10:30 (John) bookable; 11:00 not.
+  const calendars = {
+    [AE]: { busy: [] },
+    [SE1]: busy([[9], [10]], [[11], [17]]),
+    [SE2]: busy([[9], [10, 30]], [[11, 30], [17]]),
+  };
+  const { offerable } = computeAvailability([AE, SE1, SE2], calendars, windows, { minMs: 60 * MIN });
+  assert.deepEqual(offerable, [
+    { start: t(10), end: t(10, 30), ses: [SE1] },
+    { start: t(10, 30), end: t(11), ses: [SE1, SE2] },
+  ]);
+});
+
+test('loadAvailability accepts identity and FreeBusy overrides (fixture injection points)', async () => {
+  const seen = [];
+  const freeBusy = async (token, { ids }) => { seen.push({ token, ids }); const out = {}; for (const id of ids) out[id] = { busy: [] }; return out; };
+  const now = new Date(2026, 8, 23, 9); // Wed, so the week has business time left
+  const r = await loadAvailability('tok', { now, me: 'fixture.ae@osano.com', freeBusy, roster: [{ email: SE1, name: 'S1' }], minMs: 30 * MIN });
+  assert.equal(r.me, 'fixture.ae@osano.com');
+  assert.deepEqual(seen[0], { token: 'tok', ids: ['fixture.ae@osano.com', SE1] });
+  assert.ok(r.offerable.length > 0);
 });

@@ -10,7 +10,9 @@ import {
   snapUpToQuarter,
   startTimes,
   sesFreeFor,
+  validStarts,
   MODULES,
+  CHIP_STEP_MIN,
 } from './booking.js';
 
 const t = (h, m = 0) => new Date(2026, 8, 24, h, m).getTime(); // Thu 2026-09-24 local
@@ -88,12 +90,17 @@ test('snapUpToQuarter rounds up, and leaves aligned times alone', () => {
   assert.equal(snapUpToQuarter(t(10, 46)), t(11, 0));
 });
 
-test('startTimes: the §11 example — 10:15–12:00 with 30 min → 10:15 / 10:45 / 11:15', () => {
+test('startTimes: the §11 example — 10:15–12:00 with 30 min at the 30-min step → 10:15 / 10:45 / 11:15', () => {
+  assert.deepEqual(startTimes({ start: t(10, 15), end: t(12) }, 30, 30), [t(10, 15), t(10, 45), t(11, 15)]);
+});
+
+test('the default chip step is 30 minutes (§11 default)', () => {
+  assert.equal(CHIP_STEP_MIN, 30);
   assert.deepEqual(startTimes({ start: t(10, 15), end: t(12) }, 30), [t(10, 15), t(10, 45), t(11, 15)]);
 });
 
 test('startTimes: edge snaps up (10:07 → 10:15), duration must fit, 15-min step available', () => {
-  assert.deepEqual(startTimes({ start: t(10, 7), end: t(11) }, 30), [t(10, 15)]);
+  assert.deepEqual(startTimes({ start: t(10, 7), end: t(11) }, 30, 30), [t(10, 15)]);
   assert.deepEqual(startTimes({ start: t(10, 7), end: t(11) }, 30, 15), [t(10, 15), t(10, 30)]);
   assert.deepEqual(startTimes({ start: t(10, 7), end: t(10, 40) }, 30), []);
   assert.deepEqual(startTimes({ start: t(9), end: t(10) }, 60), [t(9)]);
@@ -108,4 +115,32 @@ test('sesFreeFor: an SE must cover the whole slot; slot may span two labeled seg
   assert.deepEqual(sesFreeFor(seFree, t(10, 45), t(11, 15)), ['se2@osano.com']); // crosses the 11:00 split
   assert.deepEqual(sesFreeFor(seFree, t(9), t(9, 30)), ['se1@osano.com']);
   assert.deepEqual(sesFreeFor(seFree, t(11, 45), t(12, 15)), []);
+});
+
+test('validStarts: chips start inside the block; a slot may run past the block if one SE covers it', () => {
+  // Colin free 10–11, John free 10:30–11:30 → blocks 10–10:30 [C], 10:30–11 [C,J], 11–11:30 [J]
+  const seFree = { colin: [{ start: t(10), end: t(11) }], john: [{ start: t(10, 30), end: t(11, 30) }] };
+  const b1 = { start: t(10), end: t(10, 30) };
+  const b2 = { start: t(10, 30), end: t(11) };
+  const b3 = { start: t(11), end: t(11, 30) };
+  // 30 min at the 30-min step: one chip per block, none borrowed from a neighbour
+  assert.deepEqual(validStarts(b1, seFree, 30, 30), [t(10)]);
+  assert.deepEqual(validStarts(b2, seFree, 30, 30), [t(10, 30)]);
+  assert.deepEqual(validStarts(b3, seFree, 30, 30), [t(11)]);
+  // 30 min at the 15-min step: 10:15 fits Colin (10:15–10:45); 10:45 fits John; 11:15 fits nobody (John ends 11:30)
+  assert.deepEqual(validStarts(b1, seFree, 30, 15), [t(10), t(10, 15)]);
+  assert.deepEqual(validStarts(b2, seFree, 30, 15), [t(10, 30), t(10, 45)]);
+  assert.deepEqual(validStarts(b3, seFree, 30, 15), [t(11)]);
+  // 60 min: 10:00 works with Colin, 10:30 works with John (past b2's edge), 11:00 fits nobody
+  assert.deepEqual(validStarts(b1, seFree, 60), [t(10)]);
+  assert.deepEqual(validStarts(b2, seFree, 60), [t(10, 30)]);
+  assert.deepEqual(validStarts(b3, seFree, 60), []);
+});
+
+test('validStarts: quarter-hour snap-up, 30- and 15-min steps inside a longer block; unaligned short block has none', () => {
+  const seFree = { se: [{ start: t(10, 7), end: t(12) }] };
+  assert.deepEqual(validStarts({ start: t(10, 7), end: t(12) }, seFree, 30, 30), [t(10, 15), t(10, 45), t(11, 15)]);
+  assert.deepEqual(validStarts({ start: t(10, 7), end: t(12) }, seFree, 30, 15), [t(10, 15), t(10, 30), t(10, 45), t(11), t(11, 15), t(11, 30)]);
+  // 10:07–10:40 is 33 min, so it passes a 30-min length filter, but the first aligned start (10:15) + 30 = 10:45 > 10:40
+  assert.deepEqual(validStarts({ start: t(10, 7), end: t(10, 40) }, { se: [{ start: t(10, 7), end: t(10, 40) }] }, 30), []);
 });

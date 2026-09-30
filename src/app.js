@@ -13,7 +13,7 @@ import {
   buildEventDescription,
   isIntakeComplete,
   parseEmails,
-  startTimes,
+  validStarts,
   sesFreeFor,
 } from './lib/booking.js';
 import { pickSE, ledgerStats } from './lib/assignment.js';
@@ -35,9 +35,16 @@ let weekOf = defaultWeekOf(new Date());
 let minMinutes = readPref(); // doubles as the booking duration (Project Plan §11)
 let data = null; // last successful loadAvailability() result
 let ledger = []; // SE assignment ledger entries, for the fairness pick
-let picked = null; // { run, start } while the popover is open
+let picked = null; // { segment, start } while the popover is open
 let bookingInFlight = false;
 let flash = null; // a notice that survives the next grid reload (e.g. "Booked ✓")
+
+// ---- Fixture mode (localhost only, opt-in via ?fixture=<name>; see src/dev/fixtures.js) ----
+// Swaps identity, FreeBusy, event creation, and the ledger key for synthetic stand-ins so specific
+// availability scenarios can be exercised. Never active on Archie: the hostname check is first.
+const fixtureName = location.hostname === 'localhost' ? new URLSearchParams(location.search).get('fixture') : null;
+let fixture = null;
+const ledgerOpts = () => (fixture ? { key: fixture.ledgerKey } : {});
 let settings = defaultSettings(); // roster + business hours; replaced by the stored value at boot
 let nameByEmail = new Map();
 let linkedDeal = null; // { id, name, stageLabel, companyName, url } once a pasted deal link resolves
@@ -145,6 +152,7 @@ document.addEventListener('click', (e) => {
 async function bootAuth() {
   els.connect.disabled = true;
   try {
+    if (fixtureName) return await bootFixture();
     // Settings first: the roster decides whose calendars the first fetch asks for.
     [me, settings] = await Promise.all([getMe(), loadSettings()]);
     applySettings(settings);
@@ -157,6 +165,25 @@ async function bootAuth() {
   } finally {
     els.connect.disabled = false;
   }
+}
+
+/** Fixture mode boot: no Google, no token, synthetic calendars. */
+async function bootFixture() {
+  const mod = await import('./dev/fixtures.js');
+  fixture = mod.fixtures[fixtureName];
+  if (!fixture) {
+    setNotices([{ kind: 'error', text: `Unknown fixture "${fixtureName}". Available: ${Object.keys(mod.fixtures).join(', ')}.` }]);
+    showOverlay('connect');
+    return;
+  }
+  me = fixture.me;
+  settings = await loadSettings();
+  applySettings(settings);
+  els.settingsBtn.hidden = false; // the fixture AE is not an admin, but the panel is useful for testing
+  accessToken = 'fixture';
+  els.connect.hidden = true;
+  els.refresh.hidden = false;
+  await load();
 }
 
 /** The visible fallback. Same request; a user gesture lets the popup open if it was blocked. */
@@ -222,8 +249,9 @@ async function load() {
         minMs: minMinutes * 60_000,
         roster: settings.roster,
         hours: settings.businessHours,
+        ...(fixture ? { me: fixture.me, freeBusy: fixture.freeBusy } : {}),
       }),
-      readLedger(),
+      readLedger(ledgerOpts()),
     ]);
     els.asOf.textContent = `As of ${fmtTime(data.fetchedAt)}`;
     renderWeekHeader();
@@ -358,7 +386,7 @@ async function openSettings() {
   els.hsToken.value = '';
   els.hsResult.textContent = '';
   els.dialog.showModal();
-  [ledger] = await Promise.all([readLedger(), renderHubspotSection()]); // fresh each time the panel opens
+  [ledger] = await Promise.all([readLedger(ledgerOpts()), renderHubspotSection()]); // fresh each time the panel opens
   renderStats(ledger);
 }
 
@@ -657,20 +685,9 @@ function updateTitlePreview() {
 
 // ---- Popover: start-time chips + assignment preview ----
 
-/** The maximal contiguous run of offerable time containing this segment (segments only split on label changes). */
-function runContaining(segment) {
-  const segs = data.offerable;
-  let i = segs.indexOf(segment);
-  let j = i;
-  while (i > 0 && segs[i - 1].end === segs[i].start) i--;
-  while (j < segs.length - 1 && segs[j].end === segs[j + 1].start) j++;
-  const run = segs.slice(i, j + 1);
-  return { start: run[0].start, end: run[run.length - 1].end, ses: [...new Set(run.flatMap((s) => s.ses))] };
-}
-
+/** The popover belongs to the clicked block (§11): its chips are the valid starts inside that block. */
 function openPopover(segment, blockEl) {
-  const run = runContaining(segment);
-  picked = { run, start: null };
+  picked = { segment, start: null };
   renderPopover();
   positionPopover(blockEl);
 }
@@ -682,14 +699,15 @@ function closePopover() {
 }
 
 function renderPopover() {
-  const { run, start } = picked;
+  const { segment, start } = picked;
   const durMs = minMinutes * 60_000;
-  const chips = startTimes(run, minMinutes).filter((t) => sesFreeFor(data.seFree, t, t + durMs).length);
-  const day = new Date(run.start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  // Starts inside this block whose whole slot some SE can cover (the slot may run past the block).
+  const chips = validStarts(segment, data.seFree, minMinutes);
+  const day = new Date(segment.start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 
   const head = el('div', { className: 'popover-head' });
   head.append(
-    el('div', { className: 'popover-title', textContent: `${day} · ${fmtTime(run.start)} – ${fmtTime(run.end)}` }),
+    el('div', { className: 'popover-title', textContent: `${day} · ${fmtTime(segment.start)} – ${fmtTime(segment.end)}` }),
     el('button', { className: 'popover-close', type: 'button', textContent: '×', ariaLabel: 'Close' }),
   );
   head.querySelector('.popover-close').addEventListener('click', closePopover);
@@ -767,7 +785,8 @@ async function book_(start, end, se, intake) {
   const description = buildEventDescription(intake) + (intake.dealUrl ? `\nHubSpot deal: ${intake.dealUrl}` : '');
   let event;
   try {
-    event = await createEvent(accessToken, {
+    const create = fixture?.createEvent ?? createEvent;
+    event = await create(accessToken, {
       summary,
       description,
       start,
@@ -792,7 +811,7 @@ async function book_(start, end, se, intake) {
   const n = intake.prospectEmails.length;
   const sentTo = n ? `Invites sent to ${fullName(se)} and ${n} prospect${n === 1 ? '' : 's'}.` : 'Invite sent.';
   try {
-    ledger = await recordAssignment(se);
+    ledger = await recordAssignment(se, new Date(), ledgerOpts());
     flash = {
       kind: 'success',
       text: `Booked: ${summary} · ${when} with ${fullName(se)}. ${sentTo}`,
@@ -924,6 +943,12 @@ function renderWindows() {
 
 function renderPeopleNotices() {
   const notices = flash ? [flash] : [];
+  if (fixture) {
+    notices.unshift({
+      kind: 'warn',
+      text: `Fixture mode (${fixtureName}): synthetic calendars, you are a fake AE, bookings create nothing and use a separate ledger. Remove ?fixture from the URL for live data. ${fixture.label}`,
+    });
+  }
   for (const p of data.people) {
     if (!p.error) continue;
     const isMe = p.id === data.me;

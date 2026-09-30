@@ -4,6 +4,7 @@ import { getMe } from './auth.js';
 import { fetchFreeBusy } from './freebusy.js';
 import { businessWindows, weekBounds, defaultWeekOf } from './businessDays.js';
 import { mergeIntervals, subtractIntervals, intersectIntervals, overlaps } from './intervals.js';
+import { validStarts } from './booking.js';
 
 /**
  * Pure. For each id, work out free/busy intervals within the business windows, or why we couldn't.
@@ -17,6 +18,8 @@ import { mergeIntervals, subtractIntervals, intersectIntervals, overlaps } from 
  *   offerable: Array<{ start: number, end: number, ses: string[] }>,
  *     // AE free AND at least one SE free for >= minMs (locked product rule: one SE per call).
  *     // Split wherever the set of available SEs changes, so each segment is labeled accurately.
+ *     // Only segments with at least one valid quarter-aligned start (booking.js validStarts) are
+ *     // kept, so every block on the grid opens to a non-empty popover (§11).
  *   seFree: Record<string, Interval[]>
  *     // Each readable SE's overlap with the AE (>= minMs). Lets the UI check who is free for
  *     // one specific slot, which may span two labeled segments (see booking.js sesFreeFor).
@@ -51,7 +54,8 @@ export function computeAvailability(ids, calendars, windows, { minMs = MIN_FREE_
       .filter((p) => !p.error)
       .map((p) => ({ id: p.id, intervals: intersectIntervals(ae.free, p.free, minMs) }));
     for (const p of perSe) seFree[p.id] = p.intervals;
-    offerable = labelSegments(perSe);
+    const durationMin = minMs / 60_000;
+    offerable = labelSegments(perSe).filter((seg) => validStarts(seg, seFree, durationMin).length > 0);
   }
 
   return { people, offerable, seFree };
@@ -95,9 +99,10 @@ function sameSet(a, b) {
  */
 export async function loadAvailability(
   accessToken,
-  { weekOf, now = new Date(), minMs, roster = SE_ROSTER, hours = BUSINESS_HOURS } = {},
+  { weekOf, now = new Date(), minMs, roster = SE_ROSTER, hours = BUSINESS_HOURS, me: meOverride, freeBusy = fetchFreeBusy } = {},
 ) {
-  const me = await getMe();
+  // `me` and `freeBusy` are injection points for localhost fixture mode (src/dev/); production never sets them.
+  const me = meOverride ?? (await getMe());
   const { start: weekStart, end: weekEnd } = weekBounds(weekOf ?? defaultWeekOf(now));
   const timeMin = new Date(Math.max(+now, +weekStart));
   // AE first, then SEs, deduped (the AE may themselves be an SE).
@@ -106,7 +111,7 @@ export async function loadAvailability(
 
   let calendars = {};
   if (windows.length) {
-    calendars = await fetchFreeBusy(accessToken, { timeMin, timeMax: weekEnd, ids });
+    calendars = await freeBusy(accessToken, { timeMin, timeMax: weekEnd, ids });
   } else {
     // Week is entirely in the past: nothing to fetch, everyone trivially has no windows.
     for (const id of ids) calendars[id] = { busy: [] };

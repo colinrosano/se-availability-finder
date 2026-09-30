@@ -1009,3 +1009,15 @@ h2 {
 .hs-row input {
   flex: 1 1 260px;
 }
+
+/* Chips at the 15-minute step: a wide-open afternoon can offer ~20, so keep them compact. */
+.chip {
+  font-size: 0.78rem;
+  padding: 0.22rem 0.5rem;
+}
+
+.chips {
+  gap: 0.3rem;
+  max-height: 9.5rem;
+  overflow-y: auto;
+}
