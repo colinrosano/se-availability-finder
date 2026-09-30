@@ -26,7 +26,7 @@ export const MODULES = Object.keys(PRODUCTS).filter((k) => k !== 'full_platform'
 
 const MIN = 60_000;
 const QUARTER_MS = 15 * MIN;
-export const CHIP_STEP_MIN = 15; // TRIAL (branch trial/15-min-chips): §11 default is 30, "can be loosened to 15 if the pilot shows demand"
+export const CHIP_STEP_MIN = 15; // Pilot feedback (Sep 30 2026) chose 15 over the §11 default of 30 ("can be loosened to 15 if the pilot shows demand")
 
 /** Full Platform wins outright; all six modules collapse to it. */
 export function normalizeProducts(keys) {

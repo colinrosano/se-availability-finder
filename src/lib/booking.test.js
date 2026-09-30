@@ -94,7 +94,7 @@ test('startTimes: the §11 example — 10:15–12:00 with 30 min at the 30-min s
   assert.deepEqual(startTimes({ start: t(10, 15), end: t(12) }, 30, 30), [t(10, 15), t(10, 45), t(11, 15)]);
 });
 
-test('the default chip step is 15 minutes (trial; §11 default is 30)', () => {
+test('the default chip step is 15 minutes (pilot decision; §11 default was 30)', () => {
   assert.equal(CHIP_STEP_MIN, 15);
   assert.deepEqual(startTimes({ start: t(10, 15), end: t(12) }, 30), [t(10, 15), t(10, 30), t(10, 45), t(11), t(11, 15), t(11, 30)]);
 });
