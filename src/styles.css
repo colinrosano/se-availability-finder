@@ -1021,3 +1021,36 @@ h2 {
   max-height: 9.5rem;
   overflow-y: auto;
 }
+
+/* ---- Post-booking reminder ---- */
+.booked-summary {
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-left: 4px solid var(--green);
+  background: var(--success-bg);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.booked-steps {
+  margin: 0.5rem 0 0;
+  padding-left: 1.4rem;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.booked-step {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.booked-step > .muted {
+  font-size: 0.85rem;
+}
+
+.booked-step > .btn {
+  justify-self: start;
+  text-decoration: none;
+  display: inline-block;
+}

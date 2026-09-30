@@ -81,6 +81,30 @@
       </form>
     </dialog>
 
+    <!-- After a successful booking: the two follow-ups that are still manual (expected practice). -->
+    <dialog id="booked-dialog" class="settings booked" aria-labelledby="booked-title">
+      <form method="dialog">
+        <h2 id="booked-title">Booked ✓</h2>
+        <p id="booked-summary" class="booked-summary"></p>
+        <p class="muted">Two things to do now:</p>
+        <ol class="booked-steps">
+          <li class="booked-step">
+            <strong>Add your notes to the HubSpot deal record.</strong>
+            <span class="muted">Expected for every SE call — what the prospect wants to see, context for the SE.</span>
+            <a id="booked-open-deal" class="btn btn-ghost btn-small" target="_blank" rel="noopener" hidden>Open deal in HubSpot</a>
+          </li>
+          <li class="booked-step">
+            <strong>Add the Zoom link to the calendar event.</strong>
+            <span class="muted">The invite went out without a meeting link.</span>
+            <a id="booked-open-event" class="btn btn-ghost btn-small" target="_blank" rel="noopener">Open calendar event</a>
+          </li>
+        </ol>
+        <div class="settings-actions">
+          <button id="booked-done" class="btn btn-primary" type="button">Done</button>
+        </div>
+      </form>
+    </dialog>
+
     <main class="page">
       <section class="controls" aria-label="View controls">
         <div class="week-nav">
