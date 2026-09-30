@@ -95,6 +95,11 @@ const els = {
   hsSave: $('hs-save'),
   hsTest: $('hs-test'),
   hsResult: $('hs-result'),
+  bookedDialog: $('booked-dialog'),
+  bookedSummary: $('booked-summary'),
+  bookedOpenDeal: $('booked-open-deal'),
+  bookedOpenEvent: $('booked-open-event'),
+  bookedDone: $('booked-done'),
 };
 
 const fullName = (email) => nameByEmail.get(email) ?? email;
@@ -133,6 +138,7 @@ els.settingsCancel.addEventListener('click', () => els.dialog.close());
 els.settingsSave.addEventListener('click', saveSettingsFromDialog);
 els.hsSave.addEventListener('click', saveHubspotToken);
 els.hsTest.addEventListener('click', testHubspotConnection);
+els.bookedDone.addEventListener('click', () => els.bookedDialog.close());
 document.addEventListener('keydown', (e) => e.key === 'Escape' && closePopover());
 // Clicks inside the popover never reach the document (a chip click re-renders the popover, which
 // would otherwise detach the target and make the "outside" check below close it).
@@ -829,6 +835,27 @@ async function book_(start, end, se, intake) {
   bookingInFlight = false;
   closePopover();
   await load(); // the new event now shows as busy time
+  // The reminder opens over the refreshed grid; the notice above the grid remains as the record.
+  showBookedDialog({ summary, when, se, event, deal: intake.deal });
+}
+
+/**
+ * Post-booking reminder: the two follow-ups that are still manual and expected of every AE —
+ * call notes on the HubSpot deal record, and the Zoom link on the calendar event (until Zoom is
+ * automated). Links go straight to the deal (when one was linked) and to the event.
+ */
+function showBookedDialog({ summary, when, se, event, deal }) {
+  els.bookedSummary.textContent = `${summary} · ${when} · with ${fullName(se)}`;
+  els.bookedOpenEvent.href = event.htmlLink;
+  if (deal?.url) {
+    els.bookedOpenDeal.href = deal.url;
+    els.bookedOpenDeal.hidden = false;
+  } else {
+    els.bookedOpenDeal.removeAttribute('href');
+    els.bookedOpenDeal.hidden = true;
+  }
+  els.bookedDialog.showModal();
+  els.bookedDone.focus();
 }
 
 /** Place the popover beside the clicked block, flipping left when it would overflow the grid. */
