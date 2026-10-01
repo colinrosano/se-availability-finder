@@ -15,9 +15,10 @@ import { validStarts } from './booking.js';
  * @param {{ minMs?: number }} [opts]  Minimum meeting length; a window must fit a call with ONE SE.
  * @returns {{
  *   people: Array<{ id: string, error?: string, busy?: Interval[], free?: Interval[] }>,
- *   offerable: Array<{ start: number, end: number }>,
+ *   offerable: Array<{ start: number, end: number, ses: string[] }>,
  *     // Contiguous spans where the AE and at least one SE are free, merged across SE handoffs.
- *     // The union is only for DRAWING the block: every bookable start inside it is checked
+ *     // `ses` lists everyone free at some point in the block (the grid label), not necessarily
+ *     // for the whole span. The union is only for DRAWING: every bookable start inside it is checked
  *     // against one SE at a time (booking.js validStarts / sesFreeFor), so two SEs' short gaps
  *     // never combine into a slot nobody can take. Blocks with no valid quarter-aligned start
  *     // are dropped, so every block on the grid opens to a non-empty popover (§11).
@@ -64,12 +65,17 @@ export function computeAvailability(ids, calendars, windows, { minMs = MIN_FREE_
 
 /**
  * Pure. Merge every SE's intervals into one timeline of contiguous blocks, joining touching or
- * overlapping spans regardless of which SE covers them.
- * @param {Array<{ id: string, intervals: Interval[] }>} perSe
- * @returns {Array<{ start: number, end: number }>}  sorted, non-overlapping
+ * overlapping spans regardless of which SE covers them, and label each with the SEs it touches.
+ * @param {Array<{ id: string, intervals: Interval[] }>} perSe  roster order
+ * @returns {Array<{ start: number, end: number, ses: string[] }>}  sorted, non-overlapping
  */
 export function mergeBlocks(perSe) {
-  return mergeIntervals(perSe.flatMap((p) => p.intervals));
+  return mergeIntervals(perSe.flatMap((p) => p.intervals)).map((block) => ({
+    ...block,
+    // Everyone free at SOME point in the block, in roster order — a label, not a guarantee for
+    // the whole span. Which SE covers a given slot is decided per start time (booking.js).
+    ses: perSe.filter((p) => p.intervals.some((iv) => overlaps(iv, block))).map((p) => p.id),
+  }));
 }
 
 /**

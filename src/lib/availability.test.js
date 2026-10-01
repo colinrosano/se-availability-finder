@@ -32,7 +32,7 @@ test('busy blocks outside business windows are hidden from busy but still not fr
   assert.deepEqual(people[0].free, windows);
 });
 
-test('offerable blocks are AE free ∩ (some SE free), with no SE labels', () => {
+test('offerable blocks are AE free ∩ (some SE free), labeled with the SEs they touch', () => {
   const calendars = {
     [AE]: busy([[9], [10]]), // free 10–17
     [SE1]: busy([[10], [14]]), // free 9–10, 14–17
@@ -40,19 +40,19 @@ test('offerable blocks are AE free ∩ (some SE free), with no SE labels', () =>
   };
   const { offerable } = computeAvailability([AE, SE1, SE2], calendars, windows);
   assert.deepEqual(offerable, [
-    { start: t(10), end: t(12) },
-    { start: t(14), end: t(17) },
+    { start: t(10), end: t(12), ses: [SE2] },
+    { start: t(14), end: t(17), ses: [SE1] },
   ]);
 });
 
-test('blocks merge across SE handoffs; seFree keeps the per-SE overlap for slot checks', () => {
+test('blocks merge across SE handoffs and list both SEs; seFree keeps the per-SE overlap for slot checks', () => {
   const calendars = {
     [AE]: { busy: [] },
     [SE1]: busy([[11], [17]]), // free 9–11
     [SE2]: busy([[9], [10]], [[12], [17]]), // free 10–12
   };
   const { offerable, seFree } = computeAvailability([AE, SE1, SE2], calendars, windows);
-  assert.deepEqual(offerable, [{ start: t(9), end: t(12) }]);
+  assert.deepEqual(offerable, [{ start: t(9), end: t(12), ses: [SE1, SE2] }]);
   assert.deepEqual(seFree, {
     [SE1]: [{ start: t(9), end: t(11) }],
     [SE2]: [{ start: t(10), end: t(12) }],
@@ -85,10 +85,10 @@ test('minMs applies per SE: a 60-min filter drops a 45-min overlap', () => {
   const at30 = computeAvailability([AE, SE1, SE2], calendars, windows, { minMs: 30 * MIN }).offerable;
   const at60 = computeAvailability([AE, SE1, SE2], calendars, windows, { minMs: 60 * MIN }).offerable;
   assert.deepEqual(at30, [
-    { start: t(10), end: t(10, 45) },
-    { start: t(13), end: t(15) },
+    { start: t(10), end: t(10, 45), ses: [SE1] },
+    { start: t(13), end: t(15), ses: [SE2] },
   ]);
-  assert.deepEqual(at60, [{ start: t(13), end: t(15) }]);
+  assert.deepEqual(at60, [{ start: t(13), end: t(15), ses: [SE2] }]);
 });
 
 test('missing calendar key is an error, not free', () => {
@@ -106,7 +106,7 @@ test('per-calendar errors (e.g. notFound) are surfaced and excluded from offerab
   };
   const { people, offerable } = computeAvailability([AE, SE1, SE2], calendars, windows);
   assert.match(people[1].error, /notFound/);
-  assert.deepEqual(offerable, [{ start: t(9), end: t(17) }]); // SE2 is wide open
+  assert.deepEqual(offerable, [{ start: t(9), end: t(17), ses: [SE2] }]); // SE2 is wide open
 });
 
 test('unreadable AE calendar yields no offerable blocks', () => {
@@ -121,15 +121,16 @@ test('AE who is also an SE (deduped to a single id) gets no offerable blocks', (
   assert.deepEqual(offerable, []);
 });
 
-test('mergeBlocks: empty input; touching and overlapping spans merge whoever covers them', () => {
+test('mergeBlocks: empty input; touching and overlapping spans merge, labeled with every SE they touch', () => {
   assert.deepEqual(mergeBlocks([]), []);
   const blocks = mergeBlocks([
-    { id: SE1, intervals: [{ start: 0, end: 10 }, { start: 30, end: 40 }] },
+    { id: SE1, intervals: [{ start: 0, end: 10 }, { start: 30, end: 40 }, { start: 60, end: 70 }] },
     { id: SE2, intervals: [{ start: 10, end: 20 }, { start: 35, end: 50 }] },
   ]);
   assert.deepEqual(blocks, [
-    { start: 0, end: 20 },
-    { start: 30, end: 50 },
+    { start: 0, end: 20, ses: [SE1, SE2] }, // handoff at 10: both are listed, neither covers it all
+    { start: 30, end: 50, ses: [SE1, SE2] },
+    { start: 60, end: 70, ses: [SE1] },
   ]);
 });
 
@@ -152,7 +153,7 @@ test('a merged block stays when some start inside it is bookable with ONE SE, ev
     [SE2]: busy([[9], [10, 30]], [[11, 30], [17]]),
   };
   const { offerable, seFree } = computeAvailability([AE, SE1, SE2], calendars, windows, { minMs: 60 * MIN });
-  assert.deepEqual(offerable, [{ start: t(10), end: t(11, 30) }]);
+  assert.deepEqual(offerable, [{ start: t(10), end: t(11, 30), ses: [SE1, SE2] }]);
   assert.deepEqual(validStarts(offerable[0], seFree, 60), [t(10), t(10, 30)]);
 });
 
@@ -165,7 +166,7 @@ test('the spec example: 10:00–11:30 block, SE1 10–11, SE2 11–11:30, 30 min
     [SE2]: busy([[9], [11]], [[11, 30], [17]]),
   };
   const { offerable, seFree } = computeAvailability([AE, SE1, SE2], calendars, windows, { minMs: 30 * MIN });
-  assert.deepEqual(offerable, [{ start: t(10), end: t(11, 30) }]);
+  assert.deepEqual(offerable, [{ start: t(10), end: t(11, 30), ses: [SE1, SE2] }]);
   assert.deepEqual(validStarts(offerable[0], seFree, 30), [t(10), t(10, 15), t(10, 30), t(11)]);
   assert.deepEqual(validStarts(offerable[0], seFree, 30, 30), [t(10), t(10, 30), t(11)]);
 });

@@ -13,8 +13,9 @@ Hosted on Osano's Archie platform. Pilot URL: https://creinhardt.archie.osano.de
 
 - **Availability grid.** Mon–Fri, business hours, in the viewer's local time zone. Open windows
   are drawn to the minute as one block per contiguous span where you and at least one SE are
-  free; blocks carry no SE names. Everything else is hatched. Navigate by week, filter by
-  minimum length (30/45/60 min).
+  free, labelled with everyone free somewhere in it ("You · John", or "You · Colin · John" when
+  one SE hands off to the other inside the block). Everything else is hatched. Navigate by
+  week, filter by minimum length (30/45/60 min).
 - **Any SE, one SE per call.** A window is open when the AE is free *and* at least one SE is
   free for the chosen duration. The AE never picks an SE.
 - **Booking.** Fill in the intake (call type, product, duration, company, optional prospect

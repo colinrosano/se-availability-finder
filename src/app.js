@@ -103,6 +103,7 @@ const els = {
 };
 
 const fullName = (email) => nameByEmail.get(email) ?? email;
+const firstName = (email) => fullName(email).split(' ')[0];
 const hours = () => settings.businessHours;
 
 // ---- Boot ----
@@ -997,10 +998,14 @@ function renderWindows() {
     const block = el('button', { className: 'window', type: 'button' });
     block.style.top = `${top}px`;
     block.style.height = `${height}px`;
-    // One block per contiguous span where the viewer and at least one SE are free. Which SE is
-    // free for a given slot is decided in the popover, one start time at a time.
-    block.title = `${fmtTime(w.start)} – ${fmtTime(w.end)} · you and an SE are free — click to pick a start time`;
-    block.append(el('span', { className: 'window-time', textContent: `${fmtTime(w.start)} – ${fmtTime(w.end)}` }));
+    // One block per contiguous span where the viewer and at least one SE are free. The label lists
+    // every SE free somewhere in the block ("or", not "and"); which SE covers a given slot is
+    // decided in the popover, one start time at a time.
+    block.title = `${fmtTime(w.start)} – ${fmtTime(w.end)} · you and ${w.ses.map(fullName).join(' or ')} are free — click to pick a start time`;
+    block.append(
+      el('span', { className: 'window-time', textContent: `${fmtTime(w.start)} – ${fmtTime(w.end)}` }),
+      el('span', { className: 'window-ses', textContent: ['You', ...w.ses.map(firstName)].join(' · ') }),
+    );
     if (height < 40) block.classList.add('is-short');
     block.addEventListener('click', () => openPopover(w, block));
     col.append(block);
