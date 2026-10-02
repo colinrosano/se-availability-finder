@@ -743,8 +743,14 @@ h2 {
 
 .summary-row {
   display: grid;
-  grid-template-columns: 4.6rem minmax(0, 1fr); /* fits "PRODUCTS"; values wrap, never overlap */
+  grid-template-columns: 5.8rem minmax(0, 1fr); /* fits "ASSIGNED SE"; values wrap, never overlap */
   gap: 0.5rem;
+}
+
+.summary-help {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.72rem;
 }
 
 .summary-row > span:last-child {

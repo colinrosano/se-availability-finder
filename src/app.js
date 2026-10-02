@@ -782,7 +782,10 @@ function renderSummary(start, end) {
 
   const box = el('div', { className: 'summary' });
   box.append(row('When', `${fmtTime(start)} – ${fmtTime(end)}`));
-  box.append(row('SE', pick ? fullName(pick.se) : 'No SE is free for this slot'));
+  // §11 (relabeled Sep 30 2026): "Assigned SE", with a line saying why the AE doesn't choose.
+  const seRow = row('Assigned SE', pick ? fullName(pick.se) : 'No SE is free for this slot');
+  if (pick) seRow.lastChild.append(el('span', { className: 'muted summary-help', textContent: 'Assigned automatically to balance SE workload' }));
+  box.append(seRow);
   const complete = isIntakeComplete(intake);
   box.append(row('Title', complete ? buildEventTitle(intake) : 'Complete the form above to set the title', !complete));
   // The title may say "Multi-Product"; the description (shown to the SE) always lists the modules.
