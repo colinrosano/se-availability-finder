@@ -24,6 +24,7 @@ import { formatSlotsText, formatStartsText, forDay } from './lib/slotsText.js';
 const PX_PER_MIN = 1; // grid scale: 1 minute = 1px → a 9-hour day is 540px tall
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 const PREF_KEY = 'seaf.minMinutes';
+const HELP_SEEN_KEY = 'seaf.helpSeen';
 const RENEW_BEFORE_EXPIRY_MS = 10 * 60_000; // silent renewal ~50 min into a 60-min token
 const RENEW_MIN_DELAY_MS = 30_000;
 
@@ -95,6 +96,9 @@ const els = {
   hsSave: $('hs-save'),
   hsTest: $('hs-test'),
   hsResult: $('hs-result'),
+  helpBtn: $('help'),
+  helpDialog: $('help-dialog'),
+  helpDone: $('help-done'),
   bookedDialog: $('booked-dialog'),
   bookedSummary: $('booked-summary'),
   bookedOpenDeal: $('booked-open-deal'),
@@ -139,6 +143,10 @@ els.settingsSave.addEventListener('click', saveSettingsFromDialog);
 els.hsSave.addEventListener('click', saveHubspotToken);
 els.hsTest.addEventListener('click', testHubspotConnection);
 els.bookedDone.addEventListener('click', () => els.bookedDialog.close());
+els.helpBtn.addEventListener('click', openHelp);
+els.helpDone.addEventListener('click', () => els.helpDialog.close());
+els.helpDialog.addEventListener('close', markHelpSeen); // Got it, Escape, or backdrop all count
+if (!fixtureName && !helpSeen()) openHelp(); // first visit in this browser (Project Plan §9)
 document.addEventListener('keydown', (e) => e.key === 'Escape' && closePopover());
 // Clicks inside the popover never reach the document (a chip click re-renders the popover, which
 // would otherwise detach the target and make the "outside" check below close it).
@@ -1121,6 +1129,28 @@ function readPref() {
     return DURATION_OPTIONS.includes(v) ? v : DURATION_OPTIONS[0];
   } catch {
     return DURATION_OPTIONS[0];
+  }
+}
+
+// ---- Help modal (Project Plan §9): static content, opens from ? and once on first visit ----
+function openHelp() {
+  els.helpDialog.showModal();
+  els.helpDone.focus();
+}
+
+function helpSeen() {
+  try {
+    return localStorage.getItem(HELP_SEEN_KEY) === '1';
+  } catch {
+    return true; // no storage → never auto-open, the ? button still works
+  }
+}
+
+function markHelpSeen() {
+  try {
+    localStorage.setItem(HELP_SEEN_KEY, '1');
+  } catch {
+    /* private mode etc. */
   }
 }
 

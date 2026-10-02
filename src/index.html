@@ -29,6 +29,7 @@
         <span id="as-of" class="as-of"></span>
         <button id="refresh" class="btn btn-ghost" type="button" hidden>Refresh</button>
         <button id="settings" class="btn btn-ghost" type="button" hidden>Settings</button>
+        <button id="help" class="btn btn-theme" type="button" aria-label="Help" title="Help">?</button>
         <button id="theme" class="btn btn-theme" type="button" aria-label="Switch to dark mode" title="Switch to dark mode">☾</button>
         <button id="connect" class="btn btn-primary" type="button">Connect Google Calendar</button>
       </div>
@@ -101,6 +102,64 @@
         </ol>
         <div class="settings-actions">
           <button id="booked-done" class="btn btn-primary" type="button">Done</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Help modal (Project Plan §9). Static content; opens from the ? button and once on first visit.
+         MAINTENANCE RULE: update this text whenever release notes go out. -->
+    <dialog id="help-dialog" class="settings help" aria-labelledby="help-title">
+      <form method="dialog">
+        <h2 id="help-title">How this works</h2>
+
+        <section>
+          <h3>What this does</h3>
+          <p class="muted">
+            Finds times when you and at least one Sales Engineer are both free, and books the SE call
+            in one click. The SE is assigned automatically. It replaces asking in Slack who's free.
+          </p>
+        </section>
+
+        <section>
+          <h3>How to book</h3>
+          <ol class="help-steps">
+            <li>
+              Fill in the intake form: choose your call type, product(s), duration, company, and the HubSpot deal link.
+              Pasting the link fills the company name, and the SE is added to the deal as a collaborator when you book.
+              If you would like to invite the prospects during this workflow, you have the option to add their emails.
+            </li>
+            <li>Click an open block in the grid and pick a start time.</li>
+            <li>Check the summary and click <strong>Book</strong>. The event lands on your calendar with the SE (and any prospects) invited.</li>
+            <li>The one manual step: <strong>add the Zoom link</strong> to the event via the Zoom add-on in Google Calendar. The invite goes out without one. Then add your call notes to the HubSpot deal.</li>
+          </ol>
+        </section>
+
+        <section>
+          <h3>FAQ</h3>
+          <dl class="help-faq">
+            <dt>Why can't I pick the SE?</dt>
+            <dd>Assignment is automatic: the free SE with the fewest recent bookings gets the call, so work stays balanced. The summary shows who it will be before you book.</dd>
+            <dt>Why is a time I expected not shown?</dt>
+            <dd>Someone is busy, or the full call length doesn't fit. A start time is offered only when you and one SE are free for the whole call.</dd>
+            <dt>What does the app see on my calendar?</dt>
+            <dd>Free/busy only, for you and the SEs. Never event titles, attendees, or details. The only thing it writes is the booking it creates for you.</dd>
+            <dt>How do I hold a time before the prospect confirms?</dt>
+            <dd>Put a placeholder on your own calendar. The grid respects it, so nobody else can book over it. Delete the placeholder once the real call is booked.</dd>
+          </dl>
+        </section>
+
+        <section>
+          <h3>Copy available times</h3>
+          <p class="muted">
+            Paste-ready text for a prospect email, in your time zone, never naming SEs. Three scopes:
+            <strong>the whole week</strong> (button above the grid), <strong>one day</strong> (the ⧉ icon on
+            a day header), or <strong>one block's start times</strong> ("Copy these times" in the popover,
+            already filtered to the chosen duration).
+          </p>
+        </section>
+
+        <div class="settings-actions">
+          <button id="help-done" class="btn btn-primary" type="button">Got it</button>
         </div>
       </form>
     </dialog>
