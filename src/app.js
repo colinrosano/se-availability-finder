@@ -722,9 +722,8 @@ function updateTitlePreview() {
 
 /** The popover belongs to the clicked block (§11): its chips are the valid starts inside that block. */
 function openPopover(block, blockEl) {
-  picked = { block, start: null };
+  picked = { block, blockEl, start: null };
   renderPopover();
-  positionPopover(blockEl);
 }
 
 function closePopover() {
@@ -771,6 +770,9 @@ function renderPopover() {
   }
   if (start != null) els.popover.append(renderSummary(start, start + durMs));
   els.popover.hidden = false;
+  // Re-measure after every render: picking a chip adds the summary and roughly doubles the
+  // height, and the grid wrapper clips anything past its bottom edge.
+  positionPopover(picked.blockEl);
 }
 
 function renderSummary(start, end) {
