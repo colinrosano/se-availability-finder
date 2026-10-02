@@ -20,8 +20,8 @@ const BLOCKS_FREE = {
   // At 60 min: chips 10:00 (Colin) and 10:30 (John) only; 10:15 and 11:00 fit no single SE.
   1: { [COLIN]: [[[10, 0], [11, 0]]], [JOHN]: [[[10, 30], [11, 30]]] },
   // Tue — a 33-minute block (10:07–10:40) with no quarter-aligned 30-min start: must be hidden.
-  // The afternoon block is the only thing that should show.
-  2: { [COLIN]: [[[10, 7], [10, 40]], [[13, 0], [15, 0]]] },
+  // The afternoon block starts at 1:07 but DRAWS from 1:15 (render start snaps up to the quarter).
+  2: { [COLIN]: [[[10, 7], [10, 40]], [[13, 7], [15, 0]]] },
   // Wed — back-to-back SEs: Colin 9–10, John 10–11 → ONE block 9:00–11:00.
   // At 60 min: chips 9:00 and 10:00 only; 9:15/9:30/9:45 fit nobody (no single SE spans the handoff).
   3: { [COLIN]: [[[9, 0], [10, 0]]], [JOHN]: [[[10, 0], [11, 0]]] },

@@ -4,7 +4,7 @@ import { getMe } from './auth.js';
 import { fetchFreeBusy } from './freebusy.js';
 import { businessWindows, weekBounds, defaultWeekOf } from './businessDays.js';
 import { mergeIntervals, subtractIntervals, intersectIntervals, overlaps } from './intervals.js';
-import { validStarts } from './booking.js';
+import { validStarts, snapUpToQuarter } from './booking.js';
 
 /**
  * Pure. For each id, work out free/busy intervals within the business windows, or why we couldn't.
@@ -57,7 +57,12 @@ export function computeAvailability(ids, calendars, windows, { minMs = MIN_FREE_
       .map((p) => ({ id: p.id, intervals: intersectIntervals(ae.free, p.free, minMs) }));
     for (const p of perSe) seFree[p.id] = p.intervals;
     const durationMin = minMs / 60_000;
-    offerable = mergeBlocks(perSe).filter((block) => validStarts(block, seFree, durationMin).length > 0);
+    // Rendering snaps the block's start UP to the next quarter hour (seFree keeps the exact minutes
+    // for the per-slot checks). Drop a block if the snap leaves less than the minimum call length, or
+    // if no chip inside it is valid at the chosen duration (§11: no empty popovers).
+    offerable = mergeBlocks(perSe)
+      .map((block) => ({ ...block, start: snapUpToQuarter(block.start) }))
+      .filter((block) => block.end - block.start >= MIN_FREE_MS && validStarts(block, seFree, durationMin).length > 0);
   }
 
   return { people, offerable, seFree };

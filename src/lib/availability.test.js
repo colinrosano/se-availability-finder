@@ -134,6 +134,31 @@ test('mergeBlocks: empty input; touching and overlapping spans merge, labeled wi
   ]);
 });
 
+test('render start snaps UP to the quarter hour; seFree keeps the exact minutes', () => {
+  const calendars = {
+    [AE]: { busy: [] },
+    [SE1]: busy([[9], [10, 7]], [[11], [17]]), // free 10:07–11:00
+  };
+  const { offerable, seFree } = computeAvailability([AE, SE1], calendars, windows, { minMs: 30 * MIN });
+  assert.deepEqual(offerable, [{ start: t(10, 15), end: t(11), ses: [SE1] }]);
+  assert.deepEqual(seFree[SE1], [{ start: t(10, 7), end: t(11) }]);
+  assert.deepEqual(validStarts(offerable[0], seFree, 30), [t(10, 15), t(10, 30)]);
+});
+
+test('a block is dropped when the snapped start leaves less than the minimum call length', () => {
+  const calendars = {
+    [AE]: { busy: [] },
+    [SE1]: busy([[9], [10, 52]], [[11, 20], [17]]), // free 10:52–11:20: 28 min, 20 after the snap to 11:00
+  };
+  const { offerable, seFree } = computeAvailability([AE, SE1], calendars, windows, { minMs: 30 * MIN });
+  assert.deepEqual(seFree[SE1], [], 'shorter than minMs, so not even a per-SE overlap');
+  assert.deepEqual(offerable, []);
+  // Long enough to pass the per-SE filter (10:52–11:25 = 33 min) but 25 min after the snap: still dropped.
+  const r = computeAvailability([AE, SE1], { [AE]: { busy: [] }, [SE1]: busy([[9], [10, 52]], [[11, 25], [17]]) }, windows, { minMs: 30 * MIN });
+  assert.deepEqual(r.seFree[SE1], [{ start: t(10, 52), end: t(11, 25) }]);
+  assert.deepEqual(r.offerable, []);
+});
+
 test('blocks with no valid quarter-aligned start are hidden (§11: no empty popovers)', () => {
   // SE1 free only 10:07–10:40 (33 min): passes the 30-min length filter, but no aligned 30-min start fits.
   const calendars = {
