@@ -175,7 +175,8 @@ ARCHIE_DEPLOY_TOKEN=archd_… scripts/publish.sh --file app.zip \
 ```
 
 Visibility is managed separately (Archie dashboard or the Archie MCP connector's `update_site`).
-The pilot is `restricted` with an allow-list. Republishing preserves visibility and the allow-list.
+Visibility is `all` (any signed-in Osano user) since Oct 2 2026; the pilot ran `restricted` with an
+allow-list before that. Republishing preserves whatever visibility is set.
 
 Deploying to a different namespace requires adding that origin to the OAuth client first.
 
@@ -197,6 +198,6 @@ Deploying to a different namespace requires adding that origin to the OAuth clie
 
 v1 (availability), v1.5 (booking + fair assignment + admin settings), and v2 (HubSpot deal
 linking and Deal Collaborator attribution) are built, verified end to end against Osano's
-production HubSpot portal, and deployed for a restricted pilot (Colin plus an allow-list of
-pilot AEs and SEs; last redeployed Sep 30 2026). The deal link stays optional until
+production HubSpot portal, and deployed to all signed-in Osano users (opened up from the
+restricted pilot on Oct 2 2026). The deal link stays optional until
 `HUBSPOT.required` is switched on. Meeting links (Zoom) are an open decision.
