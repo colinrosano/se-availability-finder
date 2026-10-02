@@ -1,5 +1,5 @@
 // Paste-ready "available times" text for prospect emails (Project Plan §9, "Copy available times").
-// Three scopes share one formatter: ALL (every window in the visible week), DAY (one column), and
+// Three scopes share one formatter: ALL (every block in the visible week), DAY (one column), and
 // BLOCK (the valid start times inside one clicked block). Output is the AE's local zone with an
 // explicit label, and never names or counts SEs — joint availability only. Pure.
 
@@ -7,20 +7,9 @@ import { CHIP_STEP_MIN } from './booking.js';
 
 const DEFAULT_INTRO = 'Here are some times that work on our end';
 
-/** Merge adjacent offerable segments into plain ranges; which SE is free is irrelevant to a prospect. */
-export function mergeRuns(offerable) {
-  const runs = [];
-  for (const seg of offerable) {
-    const last = runs[runs.length - 1];
-    if (last && last.end === seg.start) last.end = seg.end;
-    else runs.push({ start: seg.start, end: seg.end });
-  }
-  return runs;
-}
-
-/** The segments that fall on one calendar day (`dayKey` = Date#toDateString()). */
+/** The blocks that fall on one calendar day (`dayKey` = Date#toDateString()). */
 export function forDay(offerable, dayKey) {
-  return offerable.filter((seg) => new Date(seg.start).toDateString() === dayKey);
+  return offerable.filter((block) => new Date(block.start).toDateString() === dayKey);
 }
 
 /** Short zone label for a moment, e.g. "CDT" / "EST". Falls back to the IANA name if the locale gives none. */
@@ -52,13 +41,13 @@ function render(items, { intro, zone, qualifier, locale }) {
 }
 
 /**
- * ALL / DAY scope: windows as ranges ("10:00 AM – 12:00 PM").
- * @param {Array<{ start: number, end: number }>} offerable  Sorted segments (from computeAvailability).
+ * ALL / DAY scope: blocks as ranges ("10:00 AM – 12:00 PM").
+ * @param {Array<{ start: number, end: number }>} offerable  Sorted, merged blocks (from computeAvailability).
  * @param {{ zone?: string, locale?: string|string[], intro?: string }} [opts]
  * @returns {string}  '' when there is nothing to offer.
  */
 export function formatSlotsText(offerable, { zone, locale = [], intro = DEFAULT_INTRO } = {}) {
-  const items = mergeRuns(offerable).map((r) => ({ at: r.start, text: `${fmtTime(r.start, locale)} – ${fmtTime(r.end, locale)}` }));
+  const items = offerable.map((b) => ({ at: b.start, text: `${fmtTime(b.start, locale)} – ${fmtTime(b.end, locale)}` }));
   return render(items, { intro, zone, locale });
 }
 

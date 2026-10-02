@@ -12,8 +12,10 @@ Hosted on Osano's Archie platform. Pilot URL: https://creinhardt.archie.osano.de
 ## What it does
 
 - **Availability grid.** Mon–Fri, business hours, in the viewer's local time zone. Open windows
-  are drawn to the minute and labelled with who is free ("You · John"). Everything else is
-  hatched. Navigate by week, filter by minimum length (30/45/60 min).
+  are drawn to the minute as one block per contiguous span where you and at least one SE are
+  free, labelled with everyone free somewhere in it ("You · John", or "You · Colin · John" when
+  one SE hands off to the other inside the block). Everything else is hatched. Navigate by
+  week, filter by minimum length (30/45/60 min).
 - **Any SE, one SE per call.** A window is open when the AE is free *and* at least one SE is
   free for the chosen duration. The AE never picks an SE.
 - **Booking.** Fill in the intake (call type, product, duration, company, optional prospect
@@ -68,7 +70,7 @@ src/
     events.js         Calendar event creation
     intervals.js      merge / subtract / intersect interval math
     businessDays.js   week bounds, business-hour windows
-    availability.js   busy → free → offerable segments, per-SE free intervals
+    availability.js   busy → free → merged offerable blocks, per-SE free intervals
     booking.js        intake vocabulary, event title/description, start-time chips
     assignment.js     fairness pick + ledger statistics
     ledger.js         assignment ledger (Archie KV / localStorage fallback)
@@ -99,12 +101,12 @@ On localhost:
 
 ### Fixture mode: synthetic calendars for specific scenarios
 
-Real calendars rarely produce the edge cases the grid has to handle (blocks split where the set of
-free SEs changes, short unaligned blocks, adjacent blocks with different SEs). Fixture mode feeds
-synthetic busy data through the real pipeline instead:
+Real calendars rarely produce the edge cases the grid has to handle (an SE handoff inside one
+block, short unaligned blocks, back-to-back SEs where no single SE spans the join). Fixture mode
+feeds synthetic busy data through the real pipeline instead:
 
 ```
-http://localhost:5173/?fixture=segments
+http://localhost:5173/?fixture=blocks
 ```
 
 It works **only on localhost and only with that query parameter**. It skips Google sign-in, makes
@@ -183,8 +185,9 @@ Deploying to a different namespace requires adding that origin to the OAuth clie
   calendars and silently drops one. Query everyone by email, deduped.
 - A calendar missing from the FreeBusy response is an **error**, not "free". A `notFound` on
   a colleague means their calendar doesn't share free/busy; the UI says so per person.
-- Never intersect the AE with the *union* of SE free time. Two SEs' short gaps must not combine
-  into a window nobody can take. `computeAvailability` intersects per SE and labels segments.
+- Never let two SEs' short gaps combine into a slot nobody can take. `computeAvailability`
+  intersects per SE (`seFree`) and merges those into blocks only for drawing; every start time
+  in the popover is checked against one SE at a time, and a start no single SE covers is omitted.
 - The first page load after adding a scope re-prompts everyone for consent once. That's expected.
 - Business hours are in each viewer's local zone (the plan's deliberate v1 simplification).
 - The assignment ledger counts bookings made through this app only, never calls booked

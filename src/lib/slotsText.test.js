@@ -1,32 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeRuns, formatSlotsText, formatStartsText, forDay, groupStarts, zoneLabel, RANGE_MIN_STARTS } from './slotsText.js';
+import { formatSlotsText, formatStartsText, forDay, groupStarts, zoneLabel, RANGE_MIN_STARTS } from './slotsText.js';
 
 const t = (d, h, m = 0) => new Date(2026, 8, d, h, m).getTime(); // Sep 2026 local; 28 = Mon
-const SE1 = 'a@osano.com';
-const SE2 = 'b@osano.com';
-
-test('mergeRuns joins touching segments regardless of label, keeps gaps', () => {
-  const runs = mergeRuns([
-    { start: t(28, 9), end: t(28, 10), ses: [SE1] },
-    { start: t(28, 10), end: t(28, 10, 30), ses: [SE1, SE2] },
-    { start: t(28, 13), end: t(28, 15), ses: [SE2] },
-    { start: t(29, 10, 30), end: t(29, 12), ses: [SE1] },
-  ]);
-  assert.deepEqual(runs, [
-    { start: t(28, 9), end: t(28, 10, 30) },
-    { start: t(28, 13), end: t(28, 15) },
-    { start: t(29, 10, 30), end: t(29, 12) },
-  ]);
-});
 
 test('formatSlotsText groups by day with a zone label and intro', () => {
   const text = formatSlotsText(
     [
-      { start: t(28, 9), end: t(28, 10), ses: [SE1] },
-      { start: t(28, 10), end: t(28, 10, 30), ses: [SE1, SE2] },
-      { start: t(28, 13), end: t(28, 15), ses: [SE2] },
-      { start: t(29, 10, 30), end: t(29, 12), ses: [SE1] },
+      { start: t(28, 9), end: t(28, 10, 30) },
+      { start: t(28, 13), end: t(28, 15) },
+      { start: t(29, 10, 30), end: t(29, 12) },
     ],
     { zone: 'CDT', locale: 'en-US' },
   );
@@ -42,7 +25,7 @@ test('formatSlotsText groups by day with a zone label and intro', () => {
 
 test('formatSlotsText: empty input → empty string; custom intro honoured', () => {
   assert.equal(formatSlotsText([]), '');
-  const text = formatSlotsText([{ start: t(30, 8, 30), end: t(30, 9), ses: [SE1] }], { zone: 'ET', locale: 'en-US', intro: 'Options' });
+  const text = formatSlotsText([{ start: t(30, 8, 30), end: t(30, 9) }], { zone: 'ET', locale: 'en-US', intro: 'Options' });
   assert.equal(text, 'Options (all times ET):\n• Wed, Sep 30: 8:30 AM – 9:00 AM');
 });
 
@@ -54,9 +37,9 @@ test('zoneLabel returns a short non-empty label', () => {
 
 test('forDay picks one calendar day out of the week', () => {
   const offerable = [
-    { start: t(28, 9), end: t(28, 10), ses: [SE1] },
-    { start: t(29, 10, 30), end: t(29, 12), ses: [SE1] },
-    { start: t(29, 13), end: t(29, 14), ses: [SE2] },
+    { start: t(28, 9), end: t(28, 10) },
+    { start: t(29, 10, 30), end: t(29, 12) },
+    { start: t(29, 13), end: t(29, 14) },
   ];
   const tue = forDay(offerable, new Date(t(29, 0)).toDateString());
   assert.deepEqual(tue.map((s) => s.start), [t(29, 10, 30), t(29, 13)]);
@@ -65,8 +48,8 @@ test('forDay picks one calendar day out of the week', () => {
 
 test('DAY scope: same formatter as ALL, one day only, no SE names', () => {
   const offerable = [
-    { start: t(28, 9), end: t(28, 10), ses: [SE1] },
-    { start: t(29, 10, 30), end: t(29, 12), ses: [SE1] },
+    { start: t(28, 9), end: t(28, 10) },
+    { start: t(29, 10, 30), end: t(29, 12) },
   ];
   const text = formatSlotsText(forDay(offerable, new Date(t(29, 0)).toDateString()), { zone: 'CDT', locale: 'en-US' });
   assert.equal(text, 'Here are some times that work on our end (all times CDT):\n• Tue, Sep 29: 10:30 AM – 12:00 PM');

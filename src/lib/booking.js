@@ -118,9 +118,10 @@ export function sesFreeFor(seFree, start, end) {
 
 /**
  * Valid start times for ONE grid block (§11): quarter-hour aligned, stepping every `stepMin`,
- * starting inside the block. A start is valid when at least one SE is free for the whole slot —
- * the slot may run past the block's edge, since blocks only split where the set of free SEs
- * changes, and the SE assigned at booking is drawn from exactly this per-slot check.
+ * starting inside the block. A start is valid when ONE SE is free for the whole slot, jointly
+ * with the AE. Blocks are merged across SE handoffs, so a start that only two SEs together could
+ * span is omitted; a slot may still run past the block's edge when a single SE covers it. The SE
+ * assigned at booking is drawn from exactly this per-slot check.
  * @returns {number[]} epoch ms, ascending
  */
 export function validStarts(block, seFree, durationMin, stepMin = CHIP_STEP_MIN) {

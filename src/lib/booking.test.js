@@ -106,7 +106,7 @@ test('startTimes: edge snaps up (10:07 → 10:15), duration must fit, 15-min ste
   assert.deepEqual(startTimes({ start: t(9), end: t(10) }, 60), [t(9)]);
 });
 
-test('sesFreeFor: an SE must cover the whole slot; slot may span two labeled segments', () => {
+test('sesFreeFor: an SE must cover the whole slot; slot may cross an SE handoff inside a merged block', () => {
   const seFree = {
     'se1@osano.com': [{ start: t(9), end: t(11) }],
     'se2@osano.com': [{ start: t(10), end: t(12) }],
