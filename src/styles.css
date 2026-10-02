@@ -1061,6 +1061,43 @@ h2 {
   display: inline-block;
 }
 
+/* ---- Help modal (Project Plan §9) ---- */
+.help {
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+.help section > .muted {
+  line-height: 1.45;
+}
+
+.help-steps {
+  margin: 0.25rem 0 0;
+  padding-left: 1.4rem;
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.help-faq {
+  margin: 0.25rem 0 0;
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.help-faq dt {
+  font-weight: 600;
+  margin-top: 0.45rem;
+}
+
+.help-faq dd {
+  margin: 0;
+  color: var(--gray);
+}
+
 /* ---- Copy scopes: day-header icon and popover button (Project Plan §9) ---- */
 .day-head {
   position: relative;
