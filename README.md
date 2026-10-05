@@ -23,8 +23,12 @@ Hosted on Osano's Archie platform. Pilot URL: https://creinhardt.archie.osano.de
   the event on the AE's calendar with the assigned SE (and any prospects) invited.
 - **Fair assignment.** When several SEs are free, the one with the fewest bookings in the last
   14 days is assigned; ties go to the least recently assigned, then random. No override.
-- **Admin panel** (allow-listed emails only): edit the SE roster and business hours, and see
-  per-SE booking statistics from the assignment ledger.
+- **Admin panel** (allow-listed emails only): edit the SE roster and business hours, see per-SE
+  booking statistics from the assignment ledger, and browse the **booking log**: one row per
+  booking made through the app (booked date, call date, AE, assigned SE, call type, company, and
+  the HubSpot deal ID when one was linked), newest first, defaulting to the last 30 days with a
+  date range. Two CSV exports: the current filter or the full history. Separate from the fairness
+  ledger; no products, duration, prospect data, or calendar contents are logged.
 - **Copy available times** as paste-ready text for a prospect email, at three scopes: the whole
   visible week (button by the week nav), one day (icon on the day header), or the start times of
   one block (button in the popover, already filtered to the chosen duration). Always in the AE's
@@ -74,6 +78,7 @@ src/
     booking.js        intake vocabulary, event title/description, start-time chips
     assignment.js     fairness pick + ledger statistics
     ledger.js         assignment ledger (Archie KV / localStorage fallback)
+    bookingLog.js     booking log: append, date-range filter, CSV (Archie KV / localStorage fallback)
     settings.js       admin-managed roster + hours (Archie KV / localStorage fallback)
     store.js          the KV wrapper both of the above use
     slotsText.js      "available times" text for prospect emails
@@ -114,6 +119,12 @@ you a fake non-SE AE so both SEs appear, swaps the FreeBusy fetch for the fixtur
 Book into a no-op that creates nothing, and keeps its bookings in a separate ledger. A banner says
 so. Remove the parameter for live data. Scenarios are defined in `src/dev/fixtures.js`, which is
 excluded from the Archie zip; navigate to a week that isn't mostly in the past to see all of them.
+
+Fixture mode also reseeds the **booking log** with 26 dummy entries on every boot (its own key,
+`log:fixture`, so real localhost data is untouched): spread over the last 60 days so the 30-day
+default and the full-history export differ, several AEs and both SEs, every call type, company
+names that need CSV quoting, and a mix of linked and unlinked deals. Fixture bookings append to it;
+reload to get the known state back.
 
 ## Configuration
 
@@ -193,6 +204,10 @@ Deploying to a different namespace requires adding that origin to the OAuth clie
 - Business hours are in each viewer's local zone (the plan's deliberate v1 simplification).
 - The assignment ledger counts bookings made through this app only, never calls booked
   directly in Google Calendar. The Settings panel labels it as such.
+- The booking log is append-only with no retention pruning (the plan wants full history). It and
+  the ledger are both written after the event exists; if either write fails the booking notice says
+  so rather than hiding it. The log started empty when the feature shipped: earlier bookings exist
+  only in the ledger, which has no company or AE to backfill from.
 
 ## Status
 
