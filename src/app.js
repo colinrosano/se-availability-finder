@@ -18,6 +18,7 @@ import {
 } from './lib/booking.js';
 import { pickSE, ledgerStats } from './lib/assignment.js';
 import { readLedger, recordAssignment } from './lib/ledger.js';
+import { readBookingLog, recordBooking, filterLog, defaultRange, startOfDay, toCsv } from './lib/bookingLog.js';
 import { createEvent } from './lib/events.js';
 import { formatSlotsText, formatStartsText, forDay } from './lib/slotsText.js';
 
@@ -36,6 +37,7 @@ let weekOf = defaultWeekOf(new Date());
 let minMinutes = readPref(); // doubles as the booking duration (Project Plan §11)
 let data = null; // last successful loadAvailability() result
 let ledger = []; // SE assignment ledger entries, for the fairness pick
+let bookingLog = []; // booking log entries (admin view), loaded when the Settings panel opens
 let picked = null; // { block, start } while the popover is open
 let bookingInFlight = false;
 let flash = null; // a notice that survives the next grid reload (e.g. "Booked ✓")
@@ -46,6 +48,7 @@ let flash = null; // a notice that survives the next grid reload (e.g. "Booked �
 const fixtureName = location.hostname === 'localhost' ? new URLSearchParams(location.search).get('fixture') : null;
 let fixture = null;
 const ledgerOpts = () => (fixture ? { key: fixture.ledgerKey } : {});
+const logOpts = () => (fixture ? { key: fixture.logKey } : {});
 let settings = defaultSettings(); // roster + business hours; replaced by the stored value at boot
 let nameByEmail = new Map();
 let linkedDeal = null; // { id, name, stageLabel, companyName, url } once a pasted deal link resolves
@@ -90,6 +93,12 @@ const els = {
   settingsSave: $('settings-save'),
   statsBody: $('stats-table').querySelector('tbody'),
   statsNext: $('stats-next'),
+  logFrom: $('log-from'),
+  logTo: $('log-to'),
+  logExportFiltered: $('log-export-filtered'),
+  logExportAll: $('log-export-all'),
+  logBody: $('log-table').querySelector('tbody'),
+  logCount: $('log-count'),
   hsStatus: $('hs-status'),
   hsManage: $('hs-manage'),
   hsToken: $('hs-token'),
@@ -142,6 +151,10 @@ els.settingsCancel.addEventListener('click', () => els.dialog.close());
 els.settingsSave.addEventListener('click', saveSettingsFromDialog);
 els.hsSave.addEventListener('click', saveHubspotToken);
 els.hsTest.addEventListener('click', testHubspotConnection);
+els.logFrom.addEventListener('change', renderBookingLog);
+els.logTo.addEventListener('change', renderBookingLog);
+els.logExportFiltered.addEventListener('click', () => exportBookingLog(filterLog(bookingLog, readLogRange()), 'filtered'));
+els.logExportAll.addEventListener('click', () => exportBookingLog(filterLog(bookingLog), 'all'));
 els.bookedDone.addEventListener('click', () => els.bookedDialog.close());
 els.helpBtn.addEventListener('click', openHelp);
 els.helpDone.addEventListener('click', () => els.helpDialog.close());
@@ -194,6 +207,7 @@ async function bootFixture() {
   settings = await loadSettings();
   applySettings(settings);
   els.settingsBtn.hidden = false; // the fixture AE is not an admin, but the panel is useful for testing
+  fixture.seed?.(); // dummy booking-log entries, reseeded every boot so the admin view opens on a known state
   accessToken = 'fixture';
   els.connect.hidden = true;
   els.refresh.hidden = false;
@@ -428,9 +442,82 @@ async function openSettings() {
   renderStats([]); // placeholder while the ledger loads
   els.hsToken.value = '';
   els.hsResult.textContent = '';
+  const range = defaultRange();
+  els.logFrom.value = toDateInputValue(new Date(range.from));
+  els.logTo.value = toDateInputValue(new Date(range.to));
+  bookingLog = [];
+  renderBookingLog(); // placeholder while the log loads
   els.dialog.showModal();
-  [ledger] = await Promise.all([readLedger(ledgerOpts()), renderHubspotSection()]); // fresh each time the panel opens
+  // Fresh each time the panel opens.
+  [ledger, bookingLog] = await Promise.all([readLedger(ledgerOpts()), readBookingLog(logOpts()), renderHubspotSection()]);
   renderStats(ledger);
+  renderBookingLog();
+}
+
+// ---- Booking log (admin, Project Plan §9) ----
+
+/** The date inputs as inclusive local day bounds (epoch ms). A blank input leaves that side open. */
+function readLogRange() {
+  const parse = (v) => {
+    if (!v) return null;
+    const [y, m, d] = v.split('-').map(Number);
+    return new Date(y, m - 1, d).getTime(); // local, not UTC
+  };
+  const from = parse(els.logFrom.value);
+  const to = parse(els.logTo.value);
+  return {
+    ...(from != null && { from: startOfDay(from) }),
+    ...(to != null && { to: startOfDay(to) + 24 * 60 * 60_000 - 1 }),
+  };
+}
+
+function renderBookingLog() {
+  const rows = filterLog(bookingLog, readLogRange());
+  const fmtDay = (iso) => new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
+  if (!rows.length) {
+    const empty = el('tr');
+    empty.append(el('td', { className: 'log-empty', colSpan: 7, textContent: bookingLog.length ? 'No bookings in this date range.' : 'No bookings logged yet.' }));
+    els.logBody.replaceChildren(empty);
+  } else {
+    els.logBody.replaceChildren(
+      ...rows.map((e) => {
+        const tr = el('tr');
+        const deal = el('td');
+        if (e.dealId) {
+          deal.append(el('a', { href: `https://app.hubspot.com/contacts/${HUBSPOT.portalId}/record/0-3/${encodeURIComponent(e.dealId)}`, target: '_blank', rel: 'noopener', textContent: e.dealId }));
+        } else {
+          deal.append(el('span', { className: 'muted', textContent: '—' }));
+        }
+        tr.append(
+          el('td', { textContent: fmtDay(e.at), title: new Date(e.at).toLocaleString() }),
+          el('td', { textContent: `${fmtDay(e.callAt)}, ${fmtTime(Date.parse(e.callAt))}` }),
+          el('td', { textContent: e.ae.replace(/@osano\.com$/i, ''), title: e.ae }), // every AE is @osano.com; the CSV keeps the full address
+          el('td', { textContent: firstName(e.se), title: fullName(e.se) }),
+          el('td', { textContent: CALL_TYPES[e.callType] ?? e.callType }),
+          el('td', { className: 'log-company', textContent: e.company }),
+          deal,
+        );
+        return tr;
+      }),
+    );
+  }
+  const n = rows.length;
+  const all = bookingLog.length;
+  els.logCount.textContent = n === all ? `${all} booking${all === 1 ? '' : 's'} in total.` : `${n} of ${all} booking${all === 1 ? '' : 's'} in this range.`;
+}
+
+/** Download a CSV built in the browser; nothing leaves the page. */
+function exportBookingLog(rows, scope) {
+  const csv = toCsv(rows, { nameOf: fullName, labelOf: (k) => CALL_TYPES[k] ?? k });
+  const stamp = toDateInputValue(new Date());
+  const name = scope === 'all' ? `se-bookings-all-${stamp}.csv` : `se-bookings-${els.logFrom.value || 'start'}-to-${els.logTo.value || stamp}.csv`;
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const a = el('a', { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast(`Exported ${rows.length} booking${rows.length === 1 ? '' : 's'} to ${name}`);
 }
 
 // ---- HubSpot token (admin) ----
@@ -865,20 +952,34 @@ async function book_(start, end, se, intake) {
   const when = `${new Date(start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}, ${fmtTime(start)} – ${fmtTime(end)}`;
   const n = intake.prospectEmails.length;
   const sentTo = n ? `Invites sent to ${fullName(se)} and ${n} prospect${n === 1 ? '' : 's'}.` : 'Invite sent.';
+  // Event first; then the fairness ledger and the booking log (§11: one action). Either record
+  // failing after the event exists is reported, never hidden.
+  const notRecorded = [];
   try {
     ledger = await recordAssignment(se, new Date(), ledgerOpts());
-    flash = {
-      kind: 'success',
-      text: `Booked: ${summary} · ${when} with ${fullName(se)}. ${sentTo}`,
-      link: { href: event.htmlLink, label: 'Open in Google Calendar' },
-    };
   } catch (err) {
-    flash = {
-      kind: 'warn',
-      text: `Booked: ${summary} · ${when} with ${fullName(se)} — but the assignment could not be recorded in the fairness ledger (${err.message}).`,
-      link: { href: event.htmlLink, label: 'Open in Google Calendar' },
-    };
+    notRecorded.push(`the fairness ledger (${err.message})`);
   }
+  try {
+    await recordBooking(
+      { ae: me, se, callType: intake.callTypeKey, company: intake.companyName, callAt: start, dealId: intake.deal?.id },
+      new Date(),
+      logOpts(),
+    );
+  } catch (err) {
+    notRecorded.push(`the booking log (${err.message})`);
+  }
+  flash = notRecorded.length
+    ? {
+        kind: 'warn',
+        text: `Booked: ${summary} · ${when} with ${fullName(se)} — but it could not be recorded in ${notRecorded.join(' or ')}.`,
+        link: { href: event.htmlLink, label: 'Open in Google Calendar' },
+      }
+    : {
+        kind: 'success',
+        text: `Booked: ${summary} · ${when} with ${fullName(se)}. ${sentTo}`,
+        link: { href: event.htmlLink, label: 'Open in Google Calendar' },
+      };
   // v2: event first, collaborator second; a failure here is reported with a Retry, never hidden.
   if (intake.deal) flash = await attachCollaborator(intake.deal, se, flash);
   // A clean booking is confirmed by the reminder dialog alone (it carries the event link). The

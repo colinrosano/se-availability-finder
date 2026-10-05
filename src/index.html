@@ -57,6 +57,25 @@
           <p id="stats-next" class="stats-next"></p>
         </section>
         <section>
+          <h3>Booking log</h3>
+          <p class="muted">Every booking made via this tool: who booked, who was assigned, call type, company, and call date. Newest first.</p>
+          <div class="log-controls">
+            <label>From <input id="log-from" type="date" aria-label="Booked from" /></label>
+            <label>To <input id="log-to" type="date" aria-label="Booked to" /></label>
+            <button id="log-export-filtered" class="btn btn-ghost btn-small" type="button">Export CSV (current filter)</button>
+            <button id="log-export-all" class="btn btn-ghost btn-small" type="button">Export CSV (full history)</button>
+          </div>
+          <div class="log-wrap">
+            <table id="log-table" class="stats log">
+              <thead>
+                <tr><th>Booked</th><th>Call</th><th>AE</th><th>SE</th><th>Type</th><th>Company</th><th>Deal</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p id="log-count" class="stats-next" aria-live="polite"></p>
+        </section>
+        <section>
           <h3>Business hours</h3>
           <p class="muted">Quarter-hour times, in each viewer's local time zone.</p>
           <div class="hours-row">

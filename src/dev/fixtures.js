@@ -70,6 +70,41 @@ async function fakeCreateEvent(_token, { summary }) {
   return { id: `fixture-${Date.now()}`, htmlLink: `#fixture-booked-${encodeURIComponent(summary)}` };
 }
 
+// ---- Booking log seed (admin view) ----
+// Written to the fixture's own log key on every fixture boot, so the admin panel always opens on a
+// known state: entries spread over the last ~60 days (so the 30-day default and "full history"
+// differ), several AEs and both SEs, every call type, a company with a comma (CSV quoting), and a
+// mix of linked / unlinked deals. Dates are relative to now so the data never ages out.
+const LOG_KEY_FIXTURE = 'log:fixture';
+const SEED_AES = ['fixture.ae@osano.com', 'sam.seller@osano.com', 'kai.closer@osano.com'];
+const SEED_COMPANIES = ['Acme Corp', 'Globex, Inc.', 'Initech', 'Umbrella Health', 'Vandelay Industries', 'Hooli', 'Stark Industries', 'Wonka "Candy" Co'];
+const SEED_CALL_TYPES = ['discovery', 'demo', 'trial_kickoff', 'trial_working_session', 'trial_wrap_up', 'technical_qa'];
+
+function seedBookingLog(now = Date.now()) {
+  const entries = [];
+  // Deterministic spread: 26 bookings, 0–60 days ago, call 2–9 days after booking at a quarter hour.
+  for (let i = 0; i < 26; i++) {
+    const daysAgo = Math.round((i * i * 60) / (25 * 25)); // front-loaded: more recent bookings than old ones
+    const booked = new Date(now - daysAgo * 24 * 60 * MIN);
+    booked.setHours(9 + (i % 7), (i * 11) % 60, 0, 0);
+    const call = new Date(booked.getTime() + (2 + (i % 8)) * 24 * 60 * MIN);
+    call.setHours(10 + (i % 6), [0, 15, 30, 45][i % 4], 0, 0);
+    const entry = {
+      at: booked.toISOString(),
+      callAt: call.toISOString(),
+      ae: SEED_AES[i % SEED_AES.length],
+      se: i % 3 === 0 ? JOHN : COLIN,
+      callType: SEED_CALL_TYPES[i % SEED_CALL_TYPES.length],
+      company: SEED_COMPANIES[i % SEED_COMPANIES.length],
+    };
+    if (i % 2 === 0) entry.dealId = String(30000000000 + i * 7919);
+    entries.push(entry);
+  }
+  entries.sort((a, b) => Date.parse(a.at) - Date.parse(b.at)); // append order, oldest first, like the real log
+  localStorage.setItem(LOG_KEY_FIXTURE, JSON.stringify(entries));
+  return entries;
+}
+
 export const fixtures = {
   blocks: {
     label: 'blocks — SE handoff inside a block (Mon), unaligned short block (Tue), back-to-back SEs (Wed)',
@@ -77,5 +112,7 @@ export const fixtures = {
     freeBusy: blocksFreeBusy,
     createEvent: fakeCreateEvent,
     ledgerKey: 'ledger:fixture', // keep fake bookings out of the real (localhost) ledger
+    logKey: LOG_KEY_FIXTURE, // same for the booking log …
+    seed: seedBookingLog, // … which is reseeded with dummy entries on every fixture boot
   },
 };

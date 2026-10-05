@@ -921,6 +921,71 @@ h2 {
   color: var(--gray);
 }
 
+/* ---- Booking log (admin) ---- */
+/* The Settings dialog alone is wider so the seven log columns fit without a horizontal scroll on a
+   laptop; the booked and help dialogs keep the shared .settings width. */
+#settings-dialog {
+  width: min(780px, calc(100vw - 2rem));
+}
+
+.log-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.log-controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.log-wrap {
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.log {
+  font-size: 0.8rem;
+  min-width: 560px;
+}
+
+.log th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+
+.log td,
+.log th {
+  white-space: nowrap;
+}
+
+.log td:nth-child(2),
+.log td:nth-child(3),
+.log th:nth-child(2),
+.log th:nth-child(3) {
+  text-align: left;
+  font-variant-numeric: normal;
+}
+
+.log td.log-company {
+  white-space: normal;
+  max-width: 180px;
+}
+
+.log td.log-empty {
+  text-align: center;
+  color: var(--gray);
+  padding: 1rem;
+  white-space: normal;
+}
+
 /* ---- Copy available times ---- */
 .slots-text {
   display: block;
