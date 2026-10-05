@@ -21,7 +21,7 @@ export const SE_ROSTER = [
 export const SE_EMAILS = SE_ROSTER.map((se) => se.email);
 
 // Who may open the Settings panel (roster + business hours). A UI gate, not a security boundary.
-export const ADMIN_EMAILS = ['creinhardt@osano.com'];
+export const ADMIN_EMAILS = ['creinhardt@osano.com', 'john.allman@osano.com'];
 
 // Identity used when running locally (no Archie SDK available).
 export const DEV_EMAIL = 'creinhardt@osano.com';
