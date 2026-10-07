@@ -678,6 +678,8 @@ h2 {
   color: var(--dark);
   box-shadow: 0 8px 24px var(--shadow);
   font-size: 0.85rem;
+  box-sizing: border-box;
+  overflow-y: auto; /* max-height is set per render to the grid's height (app.js positionPopover) */
 }
 
 .popover-head {

@@ -863,11 +863,25 @@ function renderPopover() {
     copyBtn.addEventListener('click', () => copyBlockStarts(chips, copyBtn));
     els.popover.append(copyBtn);
   }
-  if (start != null) els.popover.append(renderSummary(start, start + durMs));
+  const summary = start != null ? renderSummary(start, start + durMs) : null;
+  if (summary) els.popover.append(summary);
   els.popover.hidden = false;
   // Re-measure after every render: picking a chip adds the summary and roughly doubles the
   // height, and the grid wrapper clips anything past its bottom edge.
   positionPopover(picked.blockEl);
+  if (summary) revealSummary(summary);
+}
+
+/**
+ * The popover scrolls when it is taller than the grid (positionPopover caps it). After a chip is
+ * picked, scroll so the summary starts in view and the Book button is never below the fold;
+ * when the summary alone is taller than the popover, Book wins. No-op when nothing overflows.
+ */
+function revealSummary(summary) {
+  const p = els.popover;
+  const book = summary.querySelector('.btn-primary');
+  const bookBottom = book.offsetTop + book.offsetHeight + 12;
+  p.scrollTop = Math.max(summary.offsetTop - 8, bookBottom - p.clientHeight);
 }
 
 function renderSummary(start, end) {
@@ -1016,10 +1030,15 @@ function positionPopover(blockEl) {
   const wrap = els.grid.parentElement.getBoundingClientRect();
   const b = blockEl.getBoundingClientRect();
   const p = els.popover;
+  const margin = 8;
+  // The grid wrapper clips overflow, so the popover may never be taller than the wrapper: cap it
+  // (it scrolls, see .popover) BEFORE measuring, otherwise a tall summary pushes Book out of sight.
+  p.style.maxHeight = `${Math.max(160, wrap.height - margin * 2)}px`;
   const width = p.offsetWidth || 280;
-  let left = b.right - wrap.left + 8;
-  if (left + width > wrap.width) left = Math.max(8, b.left - wrap.left - width - 8);
-  const top = Math.min(b.top - wrap.top, Math.max(0, wrap.height - (p.offsetHeight || 200) - 8));
+  const height = p.offsetHeight || 200;
+  let left = b.right - wrap.left + margin;
+  if (left + width > wrap.width) left = Math.max(margin, b.left - wrap.left - width - margin);
+  const top = Math.min(b.top - wrap.top, Math.max(margin, wrap.height - height - margin));
   p.style.left = `${left}px`;
   p.style.top = `${top}px`;
 }
