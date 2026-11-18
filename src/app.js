@@ -1,7 +1,7 @@
 // UI for the week grid and booking intake. All DOM code lives here; the data layer is in ./lib/.
 import { DURATION_OPTIONS, HUBSPOT } from './lib/config.js';
 import { parseDealUrl, isExpectedPortal, getDeal, findOwnerIdByEmail, addCollaborator } from './lib/hubspot.js';
-import { loadSettings, saveSettings, defaultSettings, isAdmin, hubspotTokenStatus, setHubspotToken } from './lib/settings.js';
+import { loadSettings, saveSettings, defaultSettings, isAdmin, featureEnabled, hubspotTokenStatus, setHubspotToken } from './lib/settings.js';
 import { requestAccessToken, getMe } from './lib/auth.js';
 import { loadAvailability, computeAvailability } from './lib/availability.js';
 import { weekBounds, defaultWeekOf, addWeeks } from './lib/businessDays.js';
@@ -99,6 +99,7 @@ const els = {
   rosterAdd: $('roster-add'),
   hoursStart: $('hours-start'),
   hoursEnd: $('hours-end'),
+  featureAvailabilityToggle: $('feature-availability-toggle'),
   settingsErrors: $('settings-errors'),
   settingsCancel: $('settings-cancel'),
   settingsSave: $('settings-save'),
@@ -225,7 +226,7 @@ async function bootFixture() {
   accessToken = 'fixture';
   els.connect.hidden = true;
   els.refresh.hidden = false;
-  els.meToggle.hidden = false;
+  renderMeToggle();
   await load();
 }
 
@@ -247,7 +248,7 @@ function setToken({ accessToken: token, expiresAt }) {
   accessToken = token;
   els.connect.hidden = true;
   els.refresh.hidden = false;
-  els.meToggle.hidden = false;
+  renderMeToggle();
   scheduleRenewal(expiresAt);
 }
 
@@ -258,7 +259,19 @@ function clearToken() {
   els.connect.textContent = 'Reconnect Google Calendar';
   els.connect.hidden = false;
   els.refresh.hidden = true;
-  els.meToggle.hidden = true;
+  renderMeToggle();
+}
+
+/**
+ * The "My availability" switch shows only with a live token AND when the feature flag allows this
+ * viewer (Settings → Features: off / admins / all). The fixture AE counts as an admin, like the
+ * Settings button does in fixture mode. If the flag hides the switch while it is Off, snap it back
+ * to On so the grid never silently shows non-joint times with no switch to explain why.
+ */
+function renderMeToggle() {
+  const allowed = featureEnabled(settings, 'availabilityToggle', { email: me, admin: fixture ? true : undefined });
+  els.meToggle.hidden = !(accessToken && allowed);
+  if (!allowed && !includeMe) setIncludeMe(true);
 }
 
 /** Renew silently ~10 minutes before expiry so a tab left open never goes stale mid-use. */
@@ -483,6 +496,7 @@ async function openSettings() {
   for (const se of settings.roster) addRosterRow(se);
   els.hoursStart.value = toTimeInputValue(settings.businessHours.start);
   els.hoursEnd.value = toTimeInputValue(settings.businessHours.end);
+  els.featureAvailabilityToggle.value = settings.features.availabilityToggle;
   els.settingsErrors.replaceChildren();
   renderStats([]); // placeholder while the ledger loads
   els.hsToken.value = '';
@@ -664,6 +678,7 @@ function readSettingsDialog() {
   return {
     roster,
     businessHours: { start: fromTimeInputValue(els.hoursStart.value), end: fromTimeInputValue(els.hoursEnd.value) },
+    features: { availabilityToggle: els.featureAvailabilityToggle.value },
   };
 }
 
@@ -672,6 +687,7 @@ async function saveSettingsFromDialog() {
   try {
     const saved = await saveSettings(readSettingsDialog());
     applySettings(saved);
+    renderMeToggle(); // the flag may have changed for this viewer; others pick it up on their next load
     els.dialog.close();
     flash = { kind: 'success', text: 'Settings saved. Availability now uses the updated roster and hours.' };
     if (data) await load();

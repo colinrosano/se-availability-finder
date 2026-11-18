@@ -908,7 +908,8 @@ h2 {
   font-size: 0.82rem;
 }
 
-.settings input {
+.settings input,
+.settings select {
   font: inherit;
   font-size: 0.9rem;
   padding: 0.35rem 0.5rem;

@@ -30,6 +30,16 @@ export const DEV_EMAIL = 'creinhardt@osano.com';
 // above). v1 ships with 8:30 AM – 5:30 PM (Project Plan / backlog item 9).
 export const BUSINESS_HOURS = { start: [8, 30], end: [17, 30] };
 
+// ---- Feature flags (admin-editable in Settings → Features; stored with the roster and hours) ----
+// Each flag is 'off' | 'admins' | 'all': hidden for everyone, shown to ADMIN_EMAILS only (a quiet
+// pilot), or shown to everyone. These are the seed and the fallback, like the roster above. A flag
+// only hides a feature's entry point; both code paths ship regardless. Remove a flag once its
+// feature has been 'all' for a few weeks.
+export const FEATURE_LEVELS = ['off', 'admins', 'all'];
+export const FEATURES = {
+  availabilityToggle: 'admins', // "My availability: On / Off" (Project Plan §9)
+};
+
 // ---- HubSpot (v2, Project Plan §12) ----
 // `portalId` is Osano's production portal ("Osano (Production)"). The private-app token is NEVER
 // in code: on Archie it lives in the secrets vault under `secretName` and every call goes through

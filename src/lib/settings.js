@@ -1,19 +1,38 @@
 // Admin-managed settings: the SE roster and business hours (Project Plan §2 "sales ops admin",
 // §7 "Archie app config store"). The values in config.js are the seed and the fallback.
 // Editing is gated by an admin allow-list — a UI gate, not a security boundary. No DOM code.
-import { SE_ROSTER, BUSINESS_HOURS, ADMIN_EMAILS, HUBSPOT } from './config.js';
+import { SE_ROSTER, BUSINESS_HOURS, ADMIN_EMAILS, HUBSPOT, FEATURES, FEATURE_LEVELS } from './config.js';
 import { kvStore } from './store.js';
 
 export const SETTINGS_KEY = 'config:settings';
 
-/** @typedef {{ roster: Array<{ email: string, name: string }>, businessHours: { start: [number, number], end: [number, number] } }} Settings */
+/**
+ * @typedef {{
+ *   roster: Array<{ email: string, name: string }>,
+ *   businessHours: { start: [number, number], end: [number, number] },
+ *   features: Record<string, 'off' | 'admins' | 'all'>,
+ * }} Settings
+ */
 
 export function defaultSettings() {
-  return structuredClone({ roster: SE_ROSTER, businessHours: BUSINESS_HOURS });
+  return structuredClone({ roster: SE_ROSTER, businessHours: BUSINESS_HOURS, features: FEATURES });
 }
 
 export function isAdmin(email) {
   return ADMIN_EMAILS.map((e) => e.toLowerCase()).includes(String(email ?? '').toLowerCase());
+}
+
+/**
+ * Whether a flagged feature is shown to this viewer. Pure. A flag the settings don't know about
+ * (older stored value, typo) reads as the config.js default, so a feature never disappears just
+ * because the store predates it.
+ * @param {Settings} settings
+ * @param {string} name  key in FEATURES
+ * @param {{ email?: string, admin?: boolean }} viewer  `admin` overrides the email check (fixture mode)
+ */
+export function featureEnabled(settings, name, { email, admin = isAdmin(email) } = {}) {
+  const level = settings?.features?.[name] ?? FEATURES[name] ?? 'off';
+  return level === 'all' || (level === 'admins' && admin);
 }
 
 /**
@@ -47,6 +66,18 @@ export function validateSettings(s) {
   } else if (bh.start[0] * 60 + bh.start[1] >= bh.end[0] * 60 + bh.end[1]) {
     problems.push('Business hours must start before they end.');
   }
+
+  // Feature flags: a value stored before a flag existed simply lacks it, so missing flags take the
+  // config.js default and unknown ones are dropped (canonicalised in place, like the roster). Only
+  // a present-but-invalid level is a problem.
+  const features = {};
+  for (const [name, fallback] of Object.entries(FEATURES)) {
+    const v = s.features?.[name];
+    if (v === undefined) features[name] = fallback;
+    else if (FEATURE_LEVELS.includes(v)) features[name] = v;
+    else problems.push(`Feature "${name}": "${v}" is not one of ${FEATURE_LEVELS.join(' / ')}.`);
+  }
+  s.features = features;
   return problems;
 }
 
@@ -59,7 +90,7 @@ export async function loadSettings() {
   try {
     const stored = await kvStore().get(SETTINGS_KEY);
     if (stored && validateSettings(stored).length === 0) {
-      return { roster: stored.roster, businessHours: stored.businessHours, source: 'store' };
+      return { roster: stored.roster, businessHours: stored.businessHours, features: stored.features, source: 'store' };
     }
   } catch {
     /* fall through to defaults */
@@ -72,7 +103,7 @@ export async function loadSettings() {
  * @returns {Promise<Settings>} the canonical saved value
  */
 export async function saveSettings(candidate) {
-  const s = structuredClone({ roster: candidate.roster, businessHours: candidate.businessHours });
+  const s = structuredClone({ roster: candidate.roster, businessHours: candidate.businessHours, features: candidate.features });
   const problems = validateSettings(s);
   if (problems.length) throw Object.assign(new Error(problems.join(' ')), { problems });
   await kvStore().set(SETTINGS_KEY, s);
