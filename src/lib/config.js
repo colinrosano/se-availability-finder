@@ -5,7 +5,9 @@ export const CLIENT_ID = '521631312959-uasjdvfko1f9r50gk4d3emoilkisb147.apps.goo
 
 // Two scopes, space-separated (Project Plan §6):
 //  - calendar.events.freebusy: read free/busy for other people's calendars (not just our own)
-//  - calendar.events: create the app's own bookings on the AE's calendar (v1.5). Never used to read.
+//  - calendar.events: create the app's own bookings on the AE's calendar (v1.5) and, in the
+//    "add an SE to an existing meeting" flow (§9), list/patch the AE's OWN events on request.
+//    SE calendars are never read; availability always comes from FreeBusy.
 export const SCOPE = [
   'https://www.googleapis.com/auth/calendar.events.freebusy',
   'https://www.googleapis.com/auth/calendar.events',
@@ -38,6 +40,7 @@ export const BUSINESS_HOURS = { start: [8, 30], end: [17, 30] };
 export const FEATURE_LEVELS = ['off', 'admins', 'all'];
 export const FEATURES = {
   availabilityToggle: 'admins', // "My availability: On / Off" (Project Plan §9)
+  existingMeeting: 'admins', // "Add an SE to an existing meeting" (Project Plan §9, from backlog #12)
 };
 
 // ---- HubSpot (v2, Project Plan §12) ----

@@ -13,6 +13,8 @@ import {
   validStarts,
   MODULES,
   CHIP_STEP_MIN,
+  EXISTING_MEETING_TYPE,
+  callTypeLabel,
 } from './booking.js';
 
 const t = (h, m = 0) => new Date(2026, 8, 24, h, m).getTime(); // Thu 2026-09-24 local
@@ -143,4 +145,11 @@ test('validStarts: quarter-hour snap-up, 30- and 15-min steps inside a longer bl
   assert.deepEqual(validStarts({ start: t(10, 7), end: t(12) }, seFree, 30, 15), [t(10, 15), t(10, 30), t(10, 45), t(11), t(11, 15), t(11, 30)]);
   // 10:07–10:40 is 33 min, so it passes a 30-min length filter, but the first aligned start (10:15) + 30 = 10:45 > 10:40
   assert.deepEqual(validStarts({ start: t(10, 7), end: t(10, 40) }, { se: [{ start: t(10, 7), end: t(10, 40) }] }, 30), []);
+});
+
+test('callTypeLabel: intake types by name, the existing-meeting marker by its label, unknown keys pass through', () => {
+  assert.equal(callTypeLabel('demo'), 'Demo');
+  assert.equal(callTypeLabel(EXISTING_MEETING_TYPE), 'Existing meeting');
+  assert.equal(callTypeLabel('existing_meeting'), 'Existing meeting');
+  assert.equal(callTypeLabel('mystery'), 'mystery');
 });

@@ -102,6 +102,13 @@
                 <option value="all">Everyone</option>
               </select>
             </label>
+            <label>Add an SE to an existing meeting
+              <select id="feature-existing-meeting">
+                <option value="off">Off for everyone</option>
+                <option value="admins">Admins only</option>
+                <option value="all">Everyone</option>
+              </select>
+            </label>
           </div>
         </section>
         <section>
@@ -138,13 +145,39 @@
             <a id="booked-open-deal" class="btn btn-ghost btn-small" target="_blank" rel="noopener" hidden>Open deal in HubSpot</a>
           </li>
           <li class="booked-step">
-            <strong>Add the Zoom link to the calendar event.</strong>
-            <span class="muted">The invite went out without a meeting link.</span>
+            <!-- Text is set by app.js showBookedDialog: the Zoom reminder for a new booking, a review
+                 note when an SE was added to an existing event (which keeps whatever link it had). -->
+            <strong id="booked-step2-title">Add the Zoom link to the calendar event.</strong>
+            <span id="booked-step2-note" class="muted">The invite went out without a meeting link.</span>
             <a id="booked-open-event" class="btn btn-ghost btn-small" target="_blank" rel="noopener">Open calendar event</a>
           </li>
         </ol>
         <div class="settings-actions">
           <button id="booked-done" class="btn btn-primary" type="button">Done</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Add an SE to an existing meeting (Project Plan §9, from backlog #12). Lists the viewer's OWN
+         events for the visible week, read on request and never stored; SE calendars stay free/busy only.
+         Only the attendee list of the chosen event changes. The deal link is required (Deal Collaborator). -->
+    <dialog id="existing-dialog" class="settings existing" aria-labelledby="existing-title">
+      <form method="dialog">
+        <h2 id="existing-title">Add an SE to an existing meeting</h2>
+        <p id="existing-intro" class="muted"></p>
+        <div id="existing-list" class="event-list" role="listbox" aria-label="Your meetings this week"></div>
+        <section id="existing-details" hidden>
+          <label class="field field-deal">
+            <span class="field-label">HubSpot deal link <span class="field-hint">required — the SE is added as Deal Collaborator</span></span>
+            <input id="existing-deal-url" type="url" inputmode="url" autocomplete="off" placeholder="https://app.hubspot.com/contacts/…/deal/…" />
+            <span id="existing-deal-status" class="field-status" aria-live="polite"></span>
+          </label>
+          <div id="existing-summary" class="summary"></div>
+        </section>
+        <div id="existing-errors" class="settings-errors" aria-live="polite"></div>
+        <div class="settings-actions">
+          <button id="existing-cancel" class="btn btn-ghost" type="button">Cancel</button>
+          <button id="existing-add" class="btn btn-primary" type="button" disabled>Add SE</button>
         </div>
       </form>
     </dialog>
@@ -184,10 +217,10 @@
             <dd>Assignment is automatic: the free SE with the fewest recent bookings gets the call, so work stays balanced. The summary shows who it will be before you book.</dd>
             <dt>Why is a time I expected not shown?</dt>
             <dd>Someone is busy, or the full call length doesn't fit. A start time is offered only when you and one SE are free for the whole call.</dd>
-            <dt>I already have the prospect meeting on my calendar. How do I find an SE for it?</dt>
-            <dd>Switch <strong>My availability</strong> (top bar) to <strong>Off</strong>. The grid then shows when an SE is free without checking your own calendar, so the time of your existing meeting can appear. Booking still works and creates a second event with the SE invited; move the SE onto your original event (or keep both) and delete the extra one. The switch resets to On every time the page loads.</dd>
+            <dt>I already have the prospect meeting on my calendar. How do I add an SE to it?</dt>
+            <dd>Click <strong>Add an SE to it</strong> under the intake form. The app lists your own meetings for the visible week (read from your calendar on the spot, never stored), you pick the call and paste the deal link, and the SE is added to that event — no duplicate, and the SE becomes Deal Collaborator. SE calendars stay free/busy only. If you don't see that button, switch <strong>My availability</strong> (top bar) to <strong>Off</strong> to see when an SE is free regardless of your calendar, and book a second event as before.</dd>
             <dt>What does the app see on my calendar?</dt>
-            <dd>Free/busy only, for you and the SEs. Never event titles, attendees, or details, whatever the My availability switch is set to. The only thing it writes is the booking it creates for you.</dd>
+            <dd>Free/busy only, for you and the SEs — never event titles, attendees, or details, whatever the My availability switch is set to. The one exception is <strong>Add an SE to it</strong>, which reads your own week's events only while that list is open. The only things it writes are the bookings it creates for you and the SE it adds to a meeting you chose.</dd>
             <dt>How do I hold a time before the prospect confirms?</dt>
             <dd>Put a placeholder on your own calendar. The grid respects it, so nobody else can book over it. Delete the placeholder once the real call is booked.</dd>
           </dl>
@@ -257,9 +290,15 @@
           </label>
           <p class="title-preview"><span class="muted">Event title:</span> <span id="title-preview"></span></p>
           <p class="intake-note muted">
-            The grid shows times when <strong>you</strong> and an SE are both free. Already have the prospect meeting on your
-            calendar? Switch <strong>My availability</strong> (top bar) to Off to see when an SE is free regardless of your own
-            calendar.
+            The grid shows times when <strong>you</strong> and an SE are both free.
+            <span id="existing-hint" hidden>
+              Already have the prospect meeting on your calendar?
+              <button id="existing-open" class="btn btn-ghost btn-small" type="button" disabled>Add an SE to it</button>
+            </span>
+            <span id="toggle-hint">
+              Already have the prospect meeting on your calendar? Switch <strong>My availability</strong> (top bar) to Off to see
+              when an SE is free regardless of your own calendar.
+            </span>
           </p>
         </div>
       </section>
@@ -280,7 +319,7 @@
       <p class="footnote">
         <span id="footnote-lead">Shows times when you and at least one Sales Engineer are free</span>, within business hours
         (<span id="hours-label"></span>), in your local time zone (<span id="tz-label"></span>).
-        Only free/busy status is read; never event details.
+        Only free/busy status is read for SEs; never their event details.
       </p>
     </main>
 

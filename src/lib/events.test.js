@@ -1,6 +1,6 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { createEvent } from './events.js';
+import { createEvent, listEvents, patchAttendees } from './events.js';
 
 let calls;
 function fakeFetch(status, json, text = '') {
@@ -70,4 +70,56 @@ test('a non-2xx response throws with the HTTP status attached', async () => {
   });
   fakeFetch(403, {}, 'insufficientPermissions');
   await assert.rejects(createEvent('tok', { summary: 's', start: 0, end: 1, attendees: [] }), (err) => err.status === 403);
+});
+
+// ---- Add an SE to an existing meeting (Project Plan §9): list the AE's own events, patch attendees ----
+
+test('listEvents: GETs the AE\'s own events as instances in start order with a fields mask, and returns items', async () => {
+  const items = [{ id: 'a' }, { id: 'b' }];
+  fakeFetch(200, { items, nextSyncToken: 'ignored' });
+  const timeMin = new Date(2026, 10, 16, 9).getTime();
+  const timeMax = new Date(2026, 10, 21).getTime();
+  const out = await listEvents('tok', { timeMin, timeMax });
+  assert.deepEqual(out, items);
+  assert.equal(calls.length, 1);
+  const { url, init } = calls[0];
+  const u = new URL(url);
+  assert.equal(u.origin + u.pathname, 'https://www.googleapis.com/calendar/v3/calendars/primary/events');
+  assert.equal(u.searchParams.get('singleEvents'), 'true');
+  assert.equal(u.searchParams.get('orderBy'), 'startTime');
+  assert.equal(u.searchParams.get('timeMin'), new Date(timeMin).toISOString());
+  assert.equal(u.searchParams.get('timeMax'), new Date(timeMax).toISOString());
+  assert.equal(u.searchParams.get('maxResults'), '250');
+  assert.match(u.searchParams.get('fields'), /^items\(id,etag,htmlLink,summary,status,eventType,start,end,recurringEventId,organizer\(/);
+  assert.match(u.searchParams.get('fields'), /attendees\(email,responseStatus,self,organizer,optional,displayName\),guestsCanInviteOthers\)$/);
+  assert.equal(init.method, undefined, 'a plain GET');
+  assert.equal(init.headers.Authorization, 'Bearer tok');
+});
+
+test('listEvents: an empty week has no items key → []; errors carry the status', async () => {
+  fakeFetch(200, {});
+  assert.deepEqual(await listEvents('tok', { timeMin: 0, timeMax: 1 }), []);
+  fakeFetch(401, {}, 'Invalid Credentials');
+  await assert.rejects(listEvents('stale', { timeMin: 0, timeMax: 1 }), (err) => err.status === 401 && /401 Invalid Credentials/.test(err.message));
+  fakeFetch(403, {}, 'insufficientPermissions');
+  await assert.rejects(listEvents('tok', { timeMin: 0, timeMax: 1 }), (err) => err.status === 403);
+});
+
+test('patchAttendees: PATCHes only the attendee list to the encoded event id with invites sent', async () => {
+  fakeFetch(200, { id: 'evt_1', htmlLink: 'https://calendar.google.com/event?eid=xyz', summary: 'ignored' });
+  const attendees = [{ email: 'ae@osano.com', responseStatus: 'accepted' }, { email: 'jane@acme.com', responseStatus: 'tentative', optional: true }, { email: 'se@osano.com' }];
+  const out = await patchAttendees('tok', 'abc_20261118T150000Z@google.com', attendees);
+  assert.deepEqual(out, { id: 'evt_1', htmlLink: 'https://calendar.google.com/event?eid=xyz' });
+  const { url, init } = calls[0];
+  assert.equal(url, 'https://www.googleapis.com/calendar/v3/calendars/primary/events/abc_20261118T150000Z%40google.com?sendUpdates=all');
+  assert.equal(init.method, 'PATCH');
+  assert.equal(init.headers.Authorization, 'Bearer tok');
+  assert.deepEqual(JSON.parse(init.body), { attendees }, 'nothing but attendees is sent, and they pass through untouched');
+});
+
+test('patchAttendees: a 403 (guest may not invite) and a 404 (event gone) carry their status', async () => {
+  fakeFetch(403, {}, 'forbiddenForNonOrganizer');
+  await assert.rejects(patchAttendees('tok', 'e', []), (err) => err.status === 403 && /Couldn't update the calendar event: 403/.test(err.message));
+  fakeFetch(404, {}, 'notFound');
+  await assert.rejects(patchAttendees('tok', 'e', []), (err) => err.status === 404);
 });
