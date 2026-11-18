@@ -33,6 +33,12 @@ Hosted on Osano's Archie platform. Pilot URL: https://creinhardt.archie.osano.de
   visible week (button by the week nav), one day (icon on the day header), or the start times of
   one block (button in the popover, already filtered to the chosen duration). Always in the AE's
   zone with a label, never naming SEs.
+- **My availability On/Off** (top bar). Off drops your own calendar from the math so the grid shows
+  when an SE is free regardless of your meetings: for staffing an SE onto a prospect call that is
+  already on your calendar. Booking still works and creates a separate event (you reconcile the
+  two). Session-only: it resets to On on every page load and is never stored. The off-state is
+  unmistakable: banner, tinted grid, "You" leaves the block labels, and a note in the popover and
+  the booked dialog.
 - Light and dark mode.
 
 ## How it works

@@ -12,6 +12,7 @@ Internal web app for Osano AEs to find times when they and at least one Sales En
 - **Admin settings built:** SE roster + business hours live in the app store (`settings.js`, key `config:settings`, via `store.js` = `archie.kv` on Archie / localStorage locally). `config.js` values are the seed and fallback. Settings load before the first FreeBusy fetch. The Settings button shows only for `ADMIN_EMAILS` (both SEs: Colin and John) — a UI gate, not a security boundary. Removing an SE keeps their ledger history.
 - **Admin booking log (Project Plan §7/§9/§11, built Oct 5 2026 on `feat/admin-booking-log`):** `bookingLog.js`, key `log:bookings`, append-only, no pruning (full history). Entry = `{ at, callAt, ae, se, callType (key), company, dealId? }` — the plan's five fields plus the booked-at timestamp (needed for newest-first and the date range) and the deal ID when linked (§12's who/when/which-deal audit trail; §7's "nothing else" wording needs the matching Notion update). Written in `app.js book_` right after the ledger, event first; either record failing is one warn notice, never hidden. Settings → "Booking log" section: date inputs default to the last 30 local days (`defaultRange`), table newest-first, two CSV buttons (current filter / full history, `toCsv`, built in the browser via Blob). The Settings dialog alone is 780px wide so the seven columns fit. Fixture mode reseeds `log:fixture` with 26 dummy entries on every boot (`fixtures.js seedBookingLog`); fixture bookings append to it.
 - **Offerable = AE free ∩ (one SE free)**, computed per SE (`seFree`) and then merged into one block per contiguous span so SE handoffs don't produce small back-to-back blocks (`computeAvailability` → `offerable[{start,end,ses}]`, refactor/merged-blocks, Oct 1 2026). `ses` is the grid label: everyone free *somewhere* in the block ("You · Colin · John" means Colin or John, not both for the whole span — Colin accepted that nuance). The merged block is only for drawing: every chip and the assignment come from the per-SE check (`booking.js validStarts` / `sesFreeFor`). **Render start snaps up to the next quarter hour** (Oct 2 2026): a 10:07 block draws, titles, and copies as 10:15 while `seFree` keeps 10:07; a block is dropped if the snap leaves under `MIN_FREE_MINUTES` (30) or no chip is valid at the chosen duration. Never let two SEs' short gaps combine into a bookable slot; a start no single SE covers is not offered.
+- **AE availability toggle built (Nov 18 2026, `feat/availability-toggle`, not yet deployed):** "My availability: On / Off" in the top bar. `computeAvailability` / `loadAvailability` take `includeAe`; Off substitutes the business windows for the AE's free time so `seFree` is each SE's own free time and everything downstream (merge, snap, `validStarts`, `pickSE`, copy formatters) is unchanged. The FreeBusy request still includes the AE; flipping is a pure recompute (`app.js recompute`). State is `app.js includeMe`, a plain variable reset on load (the checkbox is also forced to checked at boot because browsers restore form state). Off-state: warn banner in the notices, `grid-wrap.me-off` tint, "You" dropped from block labels, legend/footnote reworded, an informational line in the popover summary and the booked dialog (`#booked-me-off`); Book is never blocked. Help FAQ and intake note point to the switch. Spec: Project Plan §9 "Planned — AE availability toggle" (see the Availability toggle section below).
 
 - **v2 HubSpot built (Sep 28 2026), switched to Osano's production portal and verified end to end on Archie (Sep 29 2026):** `hubspot.js` parses the pasted deal link, verifies the portal (`HUBSPOT.portalId` = `4785246`, "Osano (Production)"), looks up name/stage/company (company fills the intake, read-only), and after booking appends the SE to Deal Collaborators (`hs_all_collaborator_owner_ids`) with a Retry on failure. Both SEs resolve as owners there (Colin 221259148, John 86829564). **The token is never in code**: Archie → `archie.secrets.proxy('hubspot', …)`, set/rotated from **Settings → HubSpot** in the app (admin panel: stored/not-stored status, replace, test connection — `settings.js hubspotTokenStatus/setHubspotToken`; the vault never returns values) or via `archie.secrets.set('hubspot', <token>)` from the console; localhost → `npm run dev:hubspot` (scripts/dev-proxy.mjs, token from `HUBSPOT_TOKEN` env var). `HUBSPOT.required` is off for the pilot; the plan's v2 rule is on.
 
@@ -64,6 +65,25 @@ If a decision is settled in the Project Plan, follow it rather than reopening it
 - Availability is always computed against the **entire SE roster**; no SE-selection step. A window is offerable if the AE + at least 1 SE are free. Zero-SE windows are hidden.
 - One SE per call.
 - **Prospects may be invited at Book time** via the optional "Prospect emails" intake field (Colin's decision, Sep 28 2026, overriding Project Plan §11 "AE + SE only" — Notion §11 needs the matching update). Emails are used transiently for the attendee list and never stored. No meeting link is attached yet; Zoom is a pending decision (SE Personal Meeting Room links in the roster is the recommended path).
+
+## Availability toggle ("My availability: On / Off")
+
+- Session-only state: plain app state, resets to On every page load.
+  NEVER persist it to localStorage — not with the other AE preferences.
+  A sticky Off silently shows non-joint times; this is deliberate design,
+  not an oversight.
+- Off means: drop the AE term from the FreeBusy merge and validStarts.
+  Per-SE duration-coverage validation is unchanged. Never alter the
+  FreeBusy request shape beyond omitting the AE's calendar — FreeBusy
+  only, never event contents (core privacy guarantee, applies everywhere).
+- Booking while Off is allowed and the booking path is otherwise
+  identical (same assignment, ledger, booking log). The only Off-specific
+  additions are the informational notice (popover + confirmation) and the
+  off-state banner/tint. Do not add a blocking confirm.
+- Copy Available Times follows the toggle (Off = SE-only times); the
+  formatter is shared and unchanged.
+- Spec of record: Notion Project Plan, Section 9, "Planned — AE
+  availability toggle." Update that section if behavior changes.
 
 ## Phases
 1. **v1** — Read from Google Calendar: availability week-grid + admin settings (built, deployed to Archie, restricted pilot)
