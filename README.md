@@ -23,7 +23,7 @@ Hosted on Osano's Archie platform. Pilot URL: https://creinhardt.archie.osano.de
   the event on the AE's calendar with the assigned SE (and any prospects) invited.
 - **Fair assignment.** When several SEs are free, the one with the fewest bookings in the last
   14 days is assigned; ties go to the least recently assigned, then random. No override.
-- **Admin panel** (allow-listed emails only): edit the SE roster and business hours, see per-SE
+- **Admin panel** (allow-listed emails only): edit the SE roster and business hours, set feature flags, see per-SE
   booking statistics from the assignment ledger, and browse the **booking log**: one row per
   booking made through the app (booked date, call date, AE, assigned SE, call type, company, and
   the HubSpot deal ID when one was linked), newest first, defaulting to the last 30 days with a
@@ -33,6 +33,14 @@ Hosted on Osano's Archie platform. Pilot URL: https://creinhardt.archie.osano.de
   visible week (button by the week nav), one day (icon on the day header), or the start times of
   one block (button in the popover, already filtered to the chosen duration). Always in the AE's
   zone with a label, never naming SEs.
+- **My availability On/Off** (top bar). Off drops your own calendar from the math so the grid shows
+  when an SE is free regardless of your meetings: for staffing an SE onto a prospect call that is
+  already on your calendar. Booking still works and creates a separate event (you reconcile the
+  two). Session-only: it resets to On on every page load and is never stored. The off-state is
+  unmistakable: banner, tinted grid, "You" leaves the block labels, and a note in the popover and
+  the booked dialog.
+  Behind a feature flag: **Settings → Features** sets it to Off for everyone, Admins only (the default,
+  a quiet pilot), or Everyone, with no redeploy.
 - Light and dark mode.
 
 ## How it works
@@ -136,6 +144,7 @@ All in `src/lib/config.js`:
 | `SCOPE` | `calendar.events.freebusy` (read free/busy) + `calendar.events` (create bookings). |
 | `SE_ROSTER`, `BUSINESS_HOURS` | Seed values; the live ones are edited in the app's Settings panel. |
 | `ADMIN_EMAILS` | Who sees the Settings panel. A UI gate, not a security boundary. |
+| `FEATURES` | Seed for the feature flags (`off` / `admins` / `all` per feature). Live values are edited in Settings → Features. |
 | `DEV_EMAIL` | Identity used on localhost. |
 | `DURATION_OPTIONS` | 30 / 45 / 60 minutes. |
 

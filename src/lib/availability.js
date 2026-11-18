@@ -12,7 +12,12 @@ import { validStarts, snapUpToQuarter } from './booking.js';
  * @param {string[]} ids        Calendar IDs, with the AE (viewer) first.
  * @param {object}   calendars  The FreeBusy `calendars` map (see freebusy.js).
  * @param {{start:number,end:number}[]} windows  Business-hour windows (see businessDays.js).
- * @param {{ minMs?: number }} [opts]  Minimum meeting length; a window must fit a call with ONE SE.
+ * @param {{ minMs?: number, includeAe?: boolean }} [opts]
+ *   minMs: minimum meeting length; a window must fit a call with ONE SE.
+ *   includeAe (default true): the "My availability" toggle (Project Plan §9). When false the AE's
+ *   calendar is left out of the merge — each SE's free time stands on its own, so the grid shows
+ *   pure SE availability and an unreadable AE calendar no longer blocks it. The AE is still
+ *   reported in `people`; the FreeBusy request is unchanged. Per-SE coverage still applies.
  * @returns {{
  *   people: Array<{ id: string, error?: string, busy?: Interval[], free?: Interval[] }>,
  *   offerable: Array<{ start: number, end: number, ses: string[] }>,
@@ -27,7 +32,7 @@ import { validStarts, snapUpToQuarter } from './booking.js';
  *     // cover one specific slot, which may run past the block's edge.
  * }}
  */
-export function computeAvailability(ids, calendars, windows, { minMs = MIN_FREE_MS } = {}) {
+export function computeAvailability(ids, calendars, windows, { minMs = MIN_FREE_MS, includeAe = true } = {}) {
   const people = ids.map((id) => {
     const cal = calendars[id];
     if (!cal) {
@@ -50,11 +55,14 @@ export function computeAvailability(ids, calendars, windows, { minMs = MIN_FREE_
   const [ae, ...others] = people;
   let offerable = [];
   const seFree = {};
-  if (ae && !ae.error) {
+  // Toggle Off: the AE counts as free for the whole business day, so the intersection below reduces
+  // to each SE's own free time. Toggle On: the AE's real free time, which must be readable.
+  const aeFree = includeAe ? (ae && !ae.error ? ae.free : null) : windows;
+  if (aeFree) {
     // Each SE's overlap with the AE, individually long enough for a call with that one SE.
     const perSe = others
       .filter((p) => !p.error)
-      .map((p) => ({ id: p.id, intervals: intersectIntervals(ae.free, p.free, minMs) }));
+      .map((p) => ({ id: p.id, intervals: intersectIntervals(aeFree, p.free, minMs) }));
     for (const p of perSe) seFree[p.id] = p.intervals;
     const durationMin = minMs / 60_000;
     // Rendering snaps the block's start UP to the next quarter hour (seFree keeps the exact minutes
@@ -88,13 +96,15 @@ export function mergeBlocks(perSe) {
  * max(now, Monday) to Saturday 00:00, and compute availability.
  *
  * @param {string} accessToken  From requestAccessToken() in auth.js
- * @param {{ weekOf?: Date, now?: Date, minMs?: number, roster?: {email:string}[], hours?: {start:number[], end:number[]} }} [opts]
+ * @param {{ weekOf?: Date, now?: Date, minMs?: number, includeAe?: boolean, roster?: {email:string}[], hours?: {start:number[], end:number[]} }} [opts]
  *   weekOf: any date in the week to show (default: this week, or next week on a weekend).
+ *   includeAe: the "My availability" toggle (see computeAvailability). The request always includes
+ *     the AE's calendar, so flipping the toggle is a pure recompute, never a refetch.
  *   roster/hours: the admin-managed settings (see settings.js); default to the config.js seeds.
  */
 export async function loadAvailability(
   accessToken,
-  { weekOf, now = new Date(), minMs, roster = SE_ROSTER, hours = BUSINESS_HOURS, me: meOverride, freeBusy = fetchFreeBusy } = {},
+  { weekOf, now = new Date(), minMs, includeAe, roster = SE_ROSTER, hours = BUSINESS_HOURS, me: meOverride, freeBusy = fetchFreeBusy } = {},
 ) {
   // `me` and `freeBusy` are injection points for localhost fixture mode (src/dev/); production never sets them.
   const me = meOverride ?? (await getMe());
@@ -111,6 +121,6 @@ export async function loadAvailability(
     // Week is entirely in the past: nothing to fetch, everyone trivially has no windows.
     for (const id of ids) calendars[id] = { busy: [] };
   }
-  const { people, offerable, seFree } = computeAvailability(ids, calendars, windows, { minMs });
+  const { people, offerable, seFree } = computeAvailability(ids, calendars, windows, { minMs, includeAe });
   return { me, ids, weekStart, weekEnd, timeMin, windows, calendars, people, offerable, seFree, fetchedAt: now };
 }

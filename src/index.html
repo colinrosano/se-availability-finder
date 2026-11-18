@@ -27,6 +27,14 @@
       </div>
       <div class="topbar-status">
         <span id="as-of" class="as-of"></span>
+        <!-- "My availability" toggle (Project Plan §9). Session-only: plain app state, resets to On on
+             every load, never stored. Off drops the viewer's calendar from the availability math. -->
+        <label id="me-toggle" class="toggle" hidden title="Off: show when an SE is free without checking your own calendar">
+          <span class="toggle-label">My availability</span>
+          <input id="me-switch" type="checkbox" role="switch" checked />
+          <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+          <span id="me-state" class="toggle-state" aria-hidden="true">On</span>
+        </label>
         <button id="refresh" class="btn btn-ghost" type="button" hidden>Refresh</button>
         <button id="settings" class="btn btn-ghost" type="button" hidden>Settings</button>
         <button id="help" class="btn btn-theme" type="button" aria-label="Help" title="Help">?</button>
@@ -84,6 +92,19 @@
           </div>
         </section>
         <section>
+          <h3>Features</h3>
+          <p class="muted">Who sees each feature. Takes effect for everyone on their next page load; no redeploy.</p>
+          <div class="hours-row">
+            <label>My availability On/Off switch
+              <select id="feature-availability-toggle">
+                <option value="off">Off for everyone</option>
+                <option value="admins">Admins only</option>
+                <option value="all">Everyone</option>
+              </select>
+            </label>
+          </div>
+        </section>
+        <section>
           <h3>HubSpot</h3>
           <p id="hs-status" class="muted"></p>
           <div id="hs-manage" class="hs-row">
@@ -106,6 +127,9 @@
       <form method="dialog">
         <h2 id="booked-title">Booked ✓</h2>
         <p id="booked-summary" class="booked-summary"></p>
+        <p id="booked-me-off" class="notice notice-warn booked-me-off" hidden>
+          Your calendar wasn't checked for this time (My availability was Off). If you already had a meeting then, you now have two events to reconcile.
+        </p>
         <p class="muted">Two things to do now:</p>
         <ol class="booked-steps">
           <li class="booked-step">
@@ -160,10 +184,10 @@
             <dd>Assignment is automatic: the free SE with the fewest recent bookings gets the call, so work stays balanced. The summary shows who it will be before you book.</dd>
             <dt>Why is a time I expected not shown?</dt>
             <dd>Someone is busy, or the full call length doesn't fit. A start time is offered only when you and one SE are free for the whole call.</dd>
-            <dt>I already have the prospect meeting on my calendar. How do I add an SE to it?</dt>
-            <dd>Invite the SE from the calendar event. This tool finds and books new times only: the existing meeting counts as busy for you (and for an SE already on the invite), so its start time will not appear in the grid.</dd>
+            <dt>I already have the prospect meeting on my calendar. How do I find an SE for it?</dt>
+            <dd>Switch <strong>My availability</strong> (top bar) to <strong>Off</strong>. The grid then shows when an SE is free without checking your own calendar, so the time of your existing meeting can appear. Booking still works and creates a second event with the SE invited; move the SE onto your original event (or keep both) and delete the extra one. The switch resets to On every time the page loads.</dd>
             <dt>What does the app see on my calendar?</dt>
-            <dd>Free/busy only, for you and the SEs. Never event titles, attendees, or details. The only thing it writes is the booking it creates for you.</dd>
+            <dd>Free/busy only, for you and the SEs. Never event titles, attendees, or details, whatever the My availability switch is set to. The only thing it writes is the booking it creates for you.</dd>
             <dt>How do I hold a time before the prospect confirms?</dt>
             <dd>Put a placeholder on your own calendar. The grid respects it, so nobody else can book over it. Delete the placeholder once the real call is booked.</dd>
           </dl>
@@ -233,8 +257,9 @@
           </label>
           <p class="title-preview"><span class="muted">Event title:</span> <span id="title-preview"></span></p>
           <p class="intake-note muted">
-            This books <strong>new</strong> times. To add an SE to a meeting that is already on your calendar, invite them
-            from the calendar event instead — the grid shows that meeting as busy for you and anyone already invited.
+            The grid shows times when <strong>you</strong> and an SE are both free. Already have the prospect meeting on your
+            calendar? Switch <strong>My availability</strong> (top bar) to Off to see when an SE is free regardless of your own
+            calendar.
           </p>
         </div>
       </section>
@@ -242,7 +267,7 @@
       <div id="notices" class="notices" aria-live="polite"></div>
 
       <div class="legend" aria-label="Legend">
-        <span class="legend-item"><span class="swatch swatch-open" aria-hidden="true"></span> Open — you and at least one SE are both free</span>
+        <span class="legend-item"><span class="swatch swatch-open" aria-hidden="true"></span> <span id="legend-open">Open — you and at least one SE are both free</span></span>
         <span class="legend-item"><span class="swatch swatch-unavailable" aria-hidden="true"></span> Unavailable</span>
       </div>
 
@@ -253,7 +278,7 @@
       </section>
 
       <p class="footnote">
-        Shows times when you and at least one Sales Engineer are free, within business hours
+        <span id="footnote-lead">Shows times when you and at least one Sales Engineer are free</span>, within business hours
         (<span id="hours-label"></span>), in your local time zone (<span id="tz-label"></span>).
         Only free/busy status is read; never event details.
       </p>

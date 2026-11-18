@@ -1,7 +1,7 @@
 // UI for the week grid and booking intake. All DOM code lives here; the data layer is in ./lib/.
 import { DURATION_OPTIONS, HUBSPOT } from './lib/config.js';
 import { parseDealUrl, isExpectedPortal, getDeal, findOwnerIdByEmail, addCollaborator } from './lib/hubspot.js';
-import { loadSettings, saveSettings, defaultSettings, isAdmin, hubspotTokenStatus, setHubspotToken } from './lib/settings.js';
+import { loadSettings, saveSettings, defaultSettings, isAdmin, featureEnabled, hubspotTokenStatus, setHubspotToken } from './lib/settings.js';
 import { requestAccessToken, getMe } from './lib/auth.js';
 import { loadAvailability, computeAvailability } from './lib/availability.js';
 import { weekBounds, defaultWeekOf, addWeeks } from './lib/businessDays.js';
@@ -35,6 +35,11 @@ let me = null; // viewer email from Archie SSO (or the dev fallback); used as th
 let renewTimer = null;
 let weekOf = defaultWeekOf(new Date());
 let minMinutes = readPref(); // doubles as the booking duration (Project Plan §11)
+// "My availability" toggle (Project Plan §9). Session-only BY DESIGN: a plain variable that resets to
+// On on every page load. Never persist it (not in localStorage with the other preferences): a sticky
+// Off would silently show times the AE can't make. Off drops the viewer's calendar from the math only;
+// the FreeBusy request and the booking path are unchanged.
+let includeMe = true;
 let data = null; // last successful loadAvailability() result
 let ledger = []; // SE assignment ledger entries, for the fairness pick
 let bookingLog = []; // booking log entries (admin view), loaded when the Settings panel opens
@@ -61,6 +66,12 @@ const els = {
   connect: $('connect'),
   refresh: $('refresh'),
   asOf: $('as-of'),
+  meToggle: $('me-toggle'),
+  meSwitch: $('me-switch'),
+  meState: $('me-state'),
+  legendOpen: $('legend-open'),
+  footnoteLead: $('footnote-lead'),
+  gridWrap: $('grid').parentElement,
   prev: $('prev-week'),
   next: $('next-week'),
   thisWeek: $('this-week'),
@@ -88,6 +99,7 @@ const els = {
   rosterAdd: $('roster-add'),
   hoursStart: $('hours-start'),
   hoursEnd: $('hours-end'),
+  featureAvailabilityToggle: $('feature-availability-toggle'),
   settingsErrors: $('settings-errors'),
   settingsCancel: $('settings-cancel'),
   settingsSave: $('settings-save'),
@@ -110,6 +122,7 @@ const els = {
   helpDone: $('help-done'),
   bookedDialog: $('booked-dialog'),
   bookedSummary: $('booked-summary'),
+  bookedMeOff: $('booked-me-off'),
   bookedOpenDeal: $('booked-open-deal'),
   bookedOpenEvent: $('booked-open-event'),
   bookedDone: $('booked-done'),
@@ -127,10 +140,12 @@ renderIntakeForm();
 renderWeekHeader();
 renderGridSkeleton();
 showOverlay('connect');
+els.meSwitch.checked = true; // browsers may restore form state across a reload; the toggle must not
 bootAuth();
 
 els.connect.addEventListener('click', connect);
 els.refresh.addEventListener('click', () => load());
+els.meSwitch.addEventListener('change', () => setIncludeMe(els.meSwitch.checked));
 els.prev.addEventListener('click', () => changeWeek(addWeeks(weekOf, -1)));
 els.next.addEventListener('click', () => changeWeek(addWeeks(weekOf, 1)));
 els.thisWeek.addEventListener('click', () => changeWeek(defaultWeekOf(new Date())));
@@ -211,6 +226,7 @@ async function bootFixture() {
   accessToken = 'fixture';
   els.connect.hidden = true;
   els.refresh.hidden = false;
+  renderMeToggle();
   await load();
 }
 
@@ -232,6 +248,7 @@ function setToken({ accessToken: token, expiresAt }) {
   accessToken = token;
   els.connect.hidden = true;
   els.refresh.hidden = false;
+  renderMeToggle();
   scheduleRenewal(expiresAt);
 }
 
@@ -242,6 +259,19 @@ function clearToken() {
   els.connect.textContent = 'Reconnect Google Calendar';
   els.connect.hidden = false;
   els.refresh.hidden = true;
+  renderMeToggle();
+}
+
+/**
+ * The "My availability" switch shows only with a live token AND when the feature flag allows this
+ * viewer (Settings → Features: off / admins / all). The fixture AE counts as an admin, like the
+ * Settings button does in fixture mode. If the flag hides the switch while it is Off, snap it back
+ * to On so the grid never silently shows non-joint times with no switch to explain why.
+ */
+function renderMeToggle() {
+  const allowed = featureEnabled(settings, 'availabilityToggle', { email: me, admin: fixture ? true : undefined });
+  els.meToggle.hidden = !(accessToken && allowed);
+  if (!allowed && !includeMe) setIncludeMe(true);
 }
 
 /** Renew silently ~10 minutes before expiry so a tab left open never goes stale mid-use. */
@@ -275,6 +305,7 @@ async function load() {
       loadAvailability(accessToken, {
         weekOf,
         minMs: minMinutes * 60_000,
+        includeAe: includeMe,
         roster: settings.roster,
         hours: settings.businessHours,
         ...(fixture ? { me: fixture.me, freeBusy: fixture.freeBusy } : {}),
@@ -317,10 +348,34 @@ function changeDuration(minutes) {
   writePref(minutes);
   renderDurationOptions();
   onIntakeChange();
+  recompute();
+}
+
+/**
+ * "My availability" On/Off (Project Plan §9). Off: the viewer's calendar is ignored by the grid,
+ * the chips, the assignment, and the copied times; everything else (booking path included) is
+ * unchanged. Because the FreeBusy request always includes the viewer, this is a pure recompute.
+ */
+function setIncludeMe(on) {
+  includeMe = on;
+  els.meSwitch.checked = on;
+  els.meState.textContent = on ? 'On' : 'Off';
+  els.gridWrap.classList.toggle('me-off', !on);
+  els.legendOpen.textContent = on ? 'Open — you and at least one SE are both free' : 'Open — at least one SE is free (your calendar not checked)';
+  els.footnoteLead.textContent = on
+    ? 'Shows times when you and at least one Sales Engineer are free'
+    : 'Shows times when at least one Sales Engineer is free, without checking your calendar';
   if (!data) return;
-  // Pure recompute from the calendars already in memory; no refetch.
+  recompute();
+  renderPeopleNotices();
+}
+
+/** Pure recompute from the calendars already in memory (duration or toggle change); no refetch. */
+function recompute() {
+  if (!data) return;
   const { people, offerable, seFree } = computeAvailability(data.ids, data.calendars, data.windows, {
-    minMs: minutes * 60_000,
+    minMs: minMinutes * 60_000,
+    includeAe: includeMe,
   });
   data = { ...data, people, offerable, seFree };
   renderWindows();
@@ -379,7 +434,8 @@ async function copySlots() {
   const blocks = data?.offerable ?? [];
   const text = formatSlotsText(blocks);
   const n = blocks.length;
-  await copyToClipboard(text, `Copied ${n} window${n === 1 ? '' : 's'} when you and an SE are both free.`, els.copySlots);
+  const who = includeMe ? 'when you and an SE are both free' : 'when an SE is free (your calendar not checked)';
+  await copyToClipboard(text, `Copied ${n} window${n === 1 ? '' : 's'} ${who}.`, els.copySlots);
 }
 
 /** DAY: one column's windows. */
@@ -388,13 +444,15 @@ async function copyDay(dayKey, btn) {
   const text = formatSlotsText(blocks);
   const n = blocks.length;
   const label = new Date(blocks[0]?.start ?? Date.now()).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-  await copyToClipboard(text, `Copied ${n} window${n === 1 ? '' : 's'} for ${label}.`, btn);
+  const note = includeMe ? '' : ' (your calendar not checked)';
+  await copyToClipboard(text, `Copied ${n} window${n === 1 ? '' : 's'} for ${label}${note}.`, btn);
 }
 
 /** BLOCK: the valid start times in the open popover, for the current duration. */
 async function copyBlockStarts(starts, btn) {
   const text = formatStartsText(starts, minMinutes);
-  await copyToClipboard(text, `Copied this block's times for a ${minMinutes}-minute call.`, btn);
+  const note = includeMe ? '' : ' (your calendar not checked)';
+  await copyToClipboard(text, `Copied this block's times for a ${minMinutes}-minute call${note}.`, btn);
 }
 
 /** Write to the clipboard, flip the button label briefly, and toast; fall back to a selectable textarea. */
@@ -438,6 +496,7 @@ async function openSettings() {
   for (const se of settings.roster) addRosterRow(se);
   els.hoursStart.value = toTimeInputValue(settings.businessHours.start);
   els.hoursEnd.value = toTimeInputValue(settings.businessHours.end);
+  els.featureAvailabilityToggle.value = settings.features.availabilityToggle;
   els.settingsErrors.replaceChildren();
   renderStats([]); // placeholder while the ledger loads
   els.hsToken.value = '';
@@ -619,6 +678,7 @@ function readSettingsDialog() {
   return {
     roster,
     businessHours: { start: fromTimeInputValue(els.hoursStart.value), end: fromTimeInputValue(els.hoursEnd.value) },
+    features: { availabilityToggle: els.featureAvailabilityToggle.value },
   };
 }
 
@@ -627,6 +687,7 @@ async function saveSettingsFromDialog() {
   try {
     const saved = await saveSettings(readSettingsDialog());
     applySettings(saved);
+    renderMeToggle(); // the flag may have changed for this viewer; others pick it up on their next load
     els.dialog.close();
     flash = { kind: 'success', text: 'Settings saved. Availability now uses the updated roster and hours.' };
     if (data) await load();
@@ -891,6 +952,8 @@ function renderSummary(start, end) {
 
   const box = el('div', { className: 'summary' });
   box.append(row('When', `${fmtTime(start)} – ${fmtTime(end)}`));
+  // §9 toggle Off: informational only, never a blocking confirm. Book stays enabled.
+  if (!includeMe) box.append(el('p', { className: 'summary-note summary-me-off', textContent: "Your calendar isn't being checked for this time." }));
   // §11 (relabeled Sep 30 2026): "Assigned SE", with a line saying why the AE doesn't choose.
   const seRow = row('Assigned SE', pick ? fullName(pick.se) : 'No SE is free for this slot');
   if (pick) seRow.lastChild.append(el('span', { className: 'muted summary-help', textContent: 'Assigned automatically to balance SE workload' }));
@@ -936,6 +999,7 @@ async function book_(start, end, se, intake) {
   bookingInFlight = true;
   flash = null;
   renderPopover();
+  const meOff = !includeMe; // captured now: the reminder dialog shows after a reload of the grid
 
   const summary = buildEventTitle(intake);
   const description = buildEventDescription(intake) + (intake.dealUrl ? `\nHubSpot deal: ${intake.dealUrl}` : '');
@@ -1003,7 +1067,7 @@ async function book_(start, end, se, intake) {
   bookingInFlight = false;
   closePopover();
   await load(); // the new event now shows as busy time
-  showBookedDialog({ summary, when, se, event, deal: intake.deal });
+  showBookedDialog({ summary, when, se, event, deal: intake.deal, meOff });
 }
 
 /**
@@ -1011,8 +1075,9 @@ async function book_(start, end, se, intake) {
  * call notes on the HubSpot deal record, and the Zoom link on the calendar event (until Zoom is
  * automated). Links go straight to the deal (when one was linked) and to the event.
  */
-function showBookedDialog({ summary, when, se, event, deal }) {
+function showBookedDialog({ summary, when, se, event, deal, meOff = false }) {
   els.bookedSummary.textContent = `${summary} · ${when} · with ${fullName(se)}`;
+  els.bookedMeOff.hidden = !meOff;
   els.bookedOpenEvent.href = event.htmlLink;
   if (deal?.url) {
     els.bookedOpenDeal.href = deal.url;
@@ -1134,10 +1199,12 @@ function renderWindows() {
     // One block per contiguous span where the viewer and at least one SE are free. The label lists
     // every SE free somewhere in the block ("or", not "and"); which SE covers a given slot is
     // decided in the popover, one start time at a time.
-    block.title = `${fmtTime(w.start)} – ${fmtTime(w.end)} · you and ${w.ses.map(fullName).join(' or ')} are free — click to pick a start time`;
+    // With My availability Off the viewer isn't part of the block, so "You" leaves the label.
+    const who = w.ses.map(fullName).join(' or ');
+    block.title = `${fmtTime(w.start)} – ${fmtTime(w.end)} · ${includeMe ? `you and ${who} are` : `${who} ${w.ses.length === 1 ? 'is' : 'are'}`} free — click to pick a start time`;
     block.append(
       el('span', { className: 'window-time', textContent: `${fmtTime(w.start)} – ${fmtTime(w.end)}` }),
-      el('span', { className: 'window-ses', textContent: ['You', ...w.ses.map(firstName)].join(' · ') }),
+      el('span', { className: 'window-ses', textContent: [...(includeMe ? ['You'] : []), ...w.ses.map(firstName)].join(' · ') }),
     );
     if (height < 40) block.classList.add('is-short');
     block.addEventListener('click', () => openPopover(w, block));
@@ -1154,6 +1221,14 @@ function renderWindows() {
 
 function renderPeopleNotices() {
   const notices = flash ? [flash] : [];
+  // Off-state banner (§9): the grid's meaning changed, so say so where the AE will see it. It is
+  // also the guard for Copy available times, whose output is SE-only while Off.
+  if (!includeMe) {
+    notices.unshift({
+      kind: 'warn',
+      text: 'My availability is Off: showing times when an SE is free, without checking your calendar. Times you copy or book may conflict with your own meetings.',
+    });
+  }
   if (fixture) {
     notices.unshift({
       kind: 'warn',
@@ -1165,9 +1240,11 @@ function renderPeopleNotices() {
     const isMe = p.id === data.me;
     const who = isMe ? 'your calendar' : `${fullName(p.id)}'s calendar`;
     notices.push({
-      kind: isMe ? 'error' : 'warn',
+      kind: isMe && includeMe ? 'error' : 'warn',
       text: isMe
-        ? `Couldn't read ${who}, so no windows can be shown. (${p.error})`
+        ? includeMe
+          ? `Couldn't read ${who}, so no windows can be shown. (${p.error})`
+          : `Couldn't read ${who}; it isn't being checked while My availability is Off. (${p.error})`
         : `Couldn't read ${who} — it may not share free/busy. Showing availability without them. (${p.error})`,
     });
   }
