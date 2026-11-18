@@ -140,6 +140,68 @@ h2 {
   opacity: 0.8;
 }
 
+/* ---- "My availability" switch (top bar, Project Plan §9) ---- */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.toggle-track {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  transition: background 0.15s;
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+
+.toggle input:checked + .toggle-track {
+  background: var(--green);
+  border-color: var(--green);
+}
+
+.toggle input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(14px);
+}
+
+.toggle input:focus-visible + .toggle-track {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.toggle-state {
+  min-width: 1.6rem;
+  font-weight: 600;
+}
+
+.toggle:has(input:not(:checked)) .toggle-state {
+  color: var(--yellow);
+}
+
 /* ---- Buttons ---- */
 .btn {
   font: inherit;
@@ -427,6 +489,26 @@ h2 {
 
 .day-col.is-today {
   background-color: var(--today);
+}
+
+/* Off-state (My availability Off): the grid's meaning changed, so the whole grid is visibly
+   different, not just the switch. Warm tint on the frame and the columns; blocks keep their colour. */
+.grid-wrap.me-off {
+  border-color: var(--warning);
+  box-shadow: inset 0 0 0 2px var(--warning);
+}
+
+.grid-wrap.me-off .grid-header {
+  background: var(--warn-bg);
+}
+
+.grid-wrap.me-off .day-col {
+  background-color: var(--warn-bg);
+}
+
+.grid-wrap.me-off .day-col.is-today {
+  background-color: var(--warn-bg);
+  background-image: repeating-linear-gradient(-45deg, var(--hatch-strong) 0 6px, transparent 6px 12px);
 }
 
 .hour-line {
@@ -784,6 +866,14 @@ h2 {
   font-size: 0.78rem;
 }
 
+/* Popover line while My availability is Off: informational, never blocking. */
+.summary-me-off {
+  padding: 0.35rem 0.6rem;
+  border-left: 3px solid var(--warning);
+  background: var(--warn-bg);
+  border-radius: 4px;
+}
+
 /* ---- Settings dialog (admin) ---- */
 .settings {
   width: min(560px, calc(100vw - 2rem));
@@ -1111,6 +1201,10 @@ h2 {
   border-radius: var(--radius);
   font-size: 0.9rem;
   overflow-wrap: anywhere;
+}
+
+.booked-me-off {
+  margin: 0 0 0.75rem;
 }
 
 .booked-steps {

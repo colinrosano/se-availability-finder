@@ -121,6 +121,53 @@ test('AE who is also an SE (deduped to a single id) gets no offerable blocks', (
   assert.deepEqual(offerable, []);
 });
 
+// ---- "My availability" toggle (Project Plan §9): includeAe = false ----
+
+test('toggle Off: the AE\'s own meetings no longer hide SE free time', () => {
+  const calendars = {
+    [AE]: busy([[10], [11]]), // the prospect call already on the AE's calendar
+    [SE1]: busy([[9], [10]], [[12], [17]]), // free 10–12
+  };
+  const on = computeAvailability([AE, SE1], calendars, windows).offerable;
+  const off = computeAvailability([AE, SE1], calendars, windows, { includeAe: false }).offerable;
+  assert.deepEqual(on, [{ start: t(11), end: t(12), ses: [SE1] }]);
+  assert.deepEqual(off, [{ start: t(10), end: t(12), ses: [SE1] }]);
+});
+
+test('toggle Off: seFree is each SE\'s own free time; the AE is still reported in people', () => {
+  const calendars = { [AE]: busy([[9], [17]]), [SE1]: busy([[13], [17]]), [SE2]: busy([[9], [14]]) };
+  const { people, seFree } = computeAvailability([AE, SE1, SE2], calendars, windows, { includeAe: false });
+  assert.deepEqual(people[0].free, []); // AE fully booked, and it doesn't matter
+  assert.deepEqual(seFree, {
+    [SE1]: [{ start: t(9), end: t(13) }],
+    [SE2]: [{ start: t(14), end: t(17) }],
+  });
+});
+
+test('toggle Off: an unreadable AE calendar no longer blocks the grid', () => {
+  const calendars = { [AE]: { errors: [{ reason: 'notFound' }] }, [SE1]: { busy: [] } };
+  const { people, offerable } = computeAvailability([AE, SE1], calendars, windows, { includeAe: false });
+  assert.match(people[0].error, /notFound/); // still surfaced for the notice
+  assert.deepEqual(offerable, [{ start: t(9), end: t(17), ses: [SE1] }]);
+});
+
+test('toggle Off: per-SE coverage still applies — two SEs\' short gaps never combine', () => {
+  const calendars = {
+    [AE]: { busy: [] },
+    [SE1]: busy([[9], [10]], [[10, 20], [17]]), // free 10:00–10:20 only
+    [SE2]: busy([[9], [10, 20]], [[10, 40], [17]]), // free 10:20–10:40 only
+  };
+  const { offerable } = computeAvailability([AE, SE1, SE2], calendars, windows, { minMs: 30 * MIN, includeAe: false });
+  assert.deepEqual(offerable, []);
+});
+
+test('toggle Off: unreadable SEs are still excluded; no readable SE → nothing offerable', () => {
+  const calendars = { [AE]: { busy: [] }, [SE1]: { errors: [{ reason: 'notFound' }] } };
+  const { offerable, seFree } = computeAvailability([AE, SE1], calendars, windows, { includeAe: false });
+  assert.deepEqual(offerable, []);
+  assert.deepEqual(seFree, {});
+});
+
 test('mergeBlocks: empty input; touching and overlapping spans merge, labeled with every SE they touch', () => {
   assert.deepEqual(mergeBlocks([]), []);
   const blocks = mergeBlocks([
@@ -204,4 +251,21 @@ test('loadAvailability accepts identity and FreeBusy overrides (fixture injectio
   assert.equal(r.me, 'fixture.ae@osano.com');
   assert.deepEqual(seen[0], { token: 'tok', ids: ['fixture.ae@osano.com', SE1] });
   assert.ok(r.offerable.length > 0);
+});
+
+test('loadAvailability passes the toggle through; the request still names the AE when Off', async () => {
+  const seen = [];
+  const me = 'fixture.ae@osano.com';
+  const freeBusy = async (token, { ids, timeMin, timeMax }) => {
+    seen.push(ids);
+    const b = (s, e) => ({ start: s.toISOString(), end: e.toISOString() });
+    return { [me]: { busy: [b(timeMin, timeMax)] }, [SE1]: { busy: [] } }; // the AE is booked solid
+  };
+  const now = new Date(2026, 8, 23, 9);
+  const opts = { now, me, freeBusy, roster: [{ email: SE1, name: 'S1' }], minMs: 30 * MIN };
+  const on = await loadAvailability('tok', opts);
+  const off = await loadAvailability('tok', { ...opts, includeAe: false });
+  assert.deepEqual(seen, [[me, SE1], [me, SE1]]); // request shape unchanged either way
+  assert.deepEqual(on.offerable, []);
+  assert.ok(off.offerable.length > 0);
 });
