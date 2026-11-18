@@ -19,6 +19,17 @@ export const CALL_TYPES = {
   technical_qa: 'Technical Q&A',
 };
 
+// Booking-log call type for "add an SE to an existing meeting" (§9). Deliberately NOT in CALL_TYPES:
+// that map is the intake/title vocabulary, and this flow never names the call. The distinct key
+// keeps the flow visible in the log's Type column (the usage signal the backlog's trigger asks for).
+export const EXISTING_MEETING_TYPE = 'existing_meeting';
+
+/** Human label for a booking-log call type: intake types, the existing-meeting marker, else the raw key. */
+export function callTypeLabel(key) {
+  if (key === EXISTING_MEETING_TYPE) return 'Existing meeting';
+  return CALL_TYPES[key] ?? key;
+}
+
 // Duration is an independent AE choice, not derived from call type.
 export const DURATIONS = [30, 45, 60];
 

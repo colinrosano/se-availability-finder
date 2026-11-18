@@ -1193,6 +1193,72 @@ h2 {
   overflow-y: auto;
 }
 
+/* ---- Add an SE to an existing meeting: the event picker ---- */
+.event-list {
+  display: grid;
+  gap: 0.3rem;
+  max-height: 14rem;
+  overflow-y: auto;
+  margin-bottom: 0.9rem;
+}
+
+.event-list .muted {
+  font-size: 0.82rem;
+}
+
+.event-row {
+  font: inherit;
+  font-size: 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.6rem;
+  width: 100%;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--dark);
+  text-align: left;
+  cursor: pointer;
+}
+
+.event-row:hover:not(:disabled) {
+  background: var(--light-violet);
+}
+
+.event-row[aria-pressed='true'] {
+  border-color: var(--purple);
+  background: var(--purple);
+  color: #fff;
+}
+
+.event-row[aria-pressed='true'] .muted {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.event-row:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.event-row .event-when {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.event-row .event-title {
+  overflow-wrap: anywhere;
+}
+
+.existing .summary {
+  margin-top: 0.6rem;
+}
+
+.existing .field {
+  margin-top: 0.5rem;
+}
+
 /* ---- Post-booking reminder ---- */
 .booked-summary {
   margin: 0 0 0.75rem;

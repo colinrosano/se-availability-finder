@@ -96,9 +96,11 @@ test('validateSettings: missing flags take the default, unknown flags are droppe
 test('saveSettings persists the flags and loadSettings returns them', async () => {
   const kv = fakeKv();
   globalThis.archie = { kv };
+  // A flag the caller leaves out (here: existingMeeting) is filled from the seed, so an older
+  // Settings dialog that knows fewer flags can never wipe a newer one.
   const saved = await saveSettings({ ...good(), features: { availabilityToggle: 'off' } });
-  assert.deepEqual(saved.features, { availabilityToggle: 'off' });
-  assert.deepEqual((await loadSettings()).features, { availabilityToggle: 'off' });
+  assert.deepEqual(saved.features, { availabilityToggle: 'off', existingMeeting: FEATURES.existingMeeting });
+  assert.deepEqual((await loadSettings()).features, { availabilityToggle: 'off', existingMeeting: FEATURES.existingMeeting });
 });
 
 test('featureEnabled: off hides for all, admins shows to the allow-list only, all shows to everyone; unknown flag → default', () => {
@@ -113,6 +115,10 @@ test('featureEnabled: off hides for all, admins shows to the allow-list only, al
   // Settings without the flag (or without `features`) fall back to config.js, never to "shown".
   assert.equal(featureEnabled(good(), 'availabilityToggle', { email: ae }), FEATURES.availabilityToggle === 'all');
   assert.equal(featureEnabled(good(), 'noSuchFlag', { email: admin }), false);
+  // Second flag, same gate.
+  const both = { ...good(), features: { availabilityToggle: 'all', existingMeeting: 'admins' } };
+  assert.equal(featureEnabled(both, 'existingMeeting', { email: admin }), true);
+  assert.equal(featureEnabled(both, 'existingMeeting', { email: ae }), false);
 });
 
 test('localStorage fallback round-trips when the Archie SDK is absent', async () => {

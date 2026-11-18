@@ -15,11 +15,14 @@ import {
   parseEmails,
   validStarts,
   sesFreeFor,
+  EXISTING_MEETING_TYPE,
+  callTypeLabel,
 } from './lib/booking.js';
 import { pickSE, ledgerStats } from './lib/assignment.js';
 import { readLedger, recordAssignment } from './lib/ledger.js';
 import { readBookingLog, recordBooking, filterLog, defaultRange, startOfDay, toCsv } from './lib/bookingLog.js';
-import { createEvent } from './lib/events.js';
+import { createEvent, listEvents, patchAttendees } from './lib/events.js';
+import { pickableEvents, sesForEvent, mergeAttendees } from './lib/existing.js';
 import { formatSlotsText, formatStartsText, forDay } from './lib/slotsText.js';
 
 const PX_PER_MIN = 1; // grid scale: 1 minute = 1px → a 9-hour day is 540px tall
@@ -45,6 +48,9 @@ let ledger = []; // SE assignment ledger entries, for the fairness pick
 let bookingLog = []; // booking log entries (admin view), loaded when the Settings panel opens
 let picked = null; // { block, start } while the popover is open
 let bookingInFlight = false;
+// "Add an SE to an existing meeting" (§9): { events, selected, deal, pick, unreadable, inFlight }
+// while #existing-dialog is open. The event list lives here only; it is never stored anywhere.
+let existing = null;
 let flash = null; // a notice that survives the next grid reload (e.g. "Booked ✓")
 
 // ---- Fixture mode (localhost only, opt-in via ?fixture=<name>; see src/dev/fixtures.js) ----
@@ -57,8 +63,6 @@ const logOpts = () => (fixture ? { key: fixture.logKey } : {});
 let settings = defaultSettings(); // roster + business hours; replaced by the stored value at boot
 let nameByEmail = new Map();
 let linkedDeal = null; // { id, name, stageLabel, companyName, url } once a pasted deal link resolves
-let dealLookupSeq = 0; // ignore stale lookups when the link changes mid-flight
-let dealDebounce = null;
 
 // ---- Elements ----
 const $ = (id) => document.getElementById(id);
@@ -100,6 +104,20 @@ const els = {
   hoursStart: $('hours-start'),
   hoursEnd: $('hours-end'),
   featureAvailabilityToggle: $('feature-availability-toggle'),
+  featureExistingMeeting: $('feature-existing-meeting'),
+  existingHint: $('existing-hint'),
+  toggleHint: $('toggle-hint'),
+  existingOpen: $('existing-open'),
+  existingDialog: $('existing-dialog'),
+  existingIntro: $('existing-intro'),
+  existingList: $('existing-list'),
+  existingDetails: $('existing-details'),
+  existingDealUrl: $('existing-deal-url'),
+  existingDealStatus: $('existing-deal-status'),
+  existingSummary: $('existing-summary'),
+  existingErrors: $('existing-errors'),
+  existingCancel: $('existing-cancel'),
+  existingAdd: $('existing-add'),
   settingsErrors: $('settings-errors'),
   settingsCancel: $('settings-cancel'),
   settingsSave: $('settings-save'),
@@ -121,6 +139,9 @@ const els = {
   helpDialog: $('help-dialog'),
   helpDone: $('help-done'),
   bookedDialog: $('booked-dialog'),
+  bookedTitle: $('booked-title'),
+  bookedStep2Title: $('booked-step2-title'),
+  bookedStep2Note: $('booked-step2-note'),
   bookedSummary: $('booked-summary'),
   bookedMeOff: $('booked-me-off'),
   bookedOpenDeal: $('booked-open-deal'),
@@ -157,7 +178,27 @@ els.jump.addEventListener('change', () => {
 els.copySlots.addEventListener('click', copySlots);
 els.callType.addEventListener('change', onIntakeChange);
 els.company.addEventListener('input', onIntakeChange);
-els.dealUrl.addEventListener('input', onDealInput);
+els.dealUrl.addEventListener(
+  'input',
+  dealLookup({ input: els.dealUrl, status: els.dealStatus, onChange: (deal) => { setLinkedDeal(deal); onIntakeChange(); } }),
+);
+// Add an SE to an existing meeting (§9)
+els.existingOpen.addEventListener('click', openExistingPicker);
+els.existingCancel.addEventListener('click', () => els.existingDialog.close());
+els.existingAdd.addEventListener('click', addToExisting_);
+els.existingDialog.addEventListener('close', () => { existing = null; });
+els.existingDealUrl.addEventListener(
+  'input',
+  dealLookup({
+    input: els.existingDealUrl,
+    status: els.existingDealStatus,
+    onChange: (deal) => {
+      if (!existing) return;
+      existing.deal = deal;
+      renderExistingSummary();
+    },
+  }),
+);
 els.prospects.addEventListener('input', onIntakeChange);
 els.products.addEventListener('change', onProductChange);
 els.settingsBtn.addEventListener('click', openSettings);
@@ -227,6 +268,7 @@ async function bootFixture() {
   els.connect.hidden = true;
   els.refresh.hidden = false;
   renderMeToggle();
+  renderExistingEntry();
   await load();
 }
 
@@ -249,6 +291,7 @@ function setToken({ accessToken: token, expiresAt }) {
   els.connect.hidden = true;
   els.refresh.hidden = false;
   renderMeToggle();
+  renderExistingEntry();
   scheduleRenewal(expiresAt);
 }
 
@@ -260,6 +303,20 @@ function clearToken() {
   els.connect.hidden = false;
   els.refresh.hidden = true;
   renderMeToggle();
+  renderExistingEntry();
+}
+
+/**
+ * The "Add an SE to it" entry point (§9) shows in the intake note only with a live token AND when
+ * the `existingMeeting` flag allows this viewer; otherwise the note falls back to the My availability
+ * hint. The button itself waits for the week's calendars, since the picker checks SEs against them.
+ */
+function renderExistingEntry() {
+  const allowed = featureEnabled(settings, 'existingMeeting', { email: me, admin: fixture ? true : undefined });
+  const show = Boolean(accessToken && allowed);
+  els.existingHint.hidden = !show;
+  els.toggleHint.hidden = show;
+  els.existingOpen.disabled = !data;
 }
 
 /**
@@ -328,6 +385,7 @@ async function load() {
     }
   } finally {
     els.refresh.disabled = false;
+    renderExistingEntry(); // enabled only once this week's calendars are in memory
   }
 }
 
@@ -336,6 +394,7 @@ function changeWeek(date) {
   data = null;
   flash = null;
   els.copySlots.disabled = true;
+  renderExistingEntry();
   closePopover();
   renderWeekHeader();
   renderGridSkeleton();
@@ -497,6 +556,7 @@ async function openSettings() {
   els.hoursStart.value = toTimeInputValue(settings.businessHours.start);
   els.hoursEnd.value = toTimeInputValue(settings.businessHours.end);
   els.featureAvailabilityToggle.value = settings.features.availabilityToggle;
+  els.featureExistingMeeting.value = settings.features.existingMeeting;
   els.settingsErrors.replaceChildren();
   renderStats([]); // placeholder while the ledger loads
   els.hsToken.value = '';
@@ -552,7 +612,7 @@ function renderBookingLog() {
           el('td', { textContent: `${fmtDay(e.callAt)}, ${fmtTime(Date.parse(e.callAt))}` }),
           el('td', { textContent: e.ae.replace(/@osano\.com$/i, ''), title: e.ae }), // every AE is @osano.com; the CSV keeps the full address
           el('td', { textContent: firstName(e.se), title: fullName(e.se) }),
-          el('td', { textContent: CALL_TYPES[e.callType] ?? e.callType }),
+          el('td', { textContent: callTypeLabel(e.callType) }),
           el('td', { className: 'log-company', textContent: e.company }),
           deal,
         );
@@ -567,7 +627,7 @@ function renderBookingLog() {
 
 /** Download a CSV built in the browser; nothing leaves the page. */
 function exportBookingLog(rows, scope) {
-  const csv = toCsv(rows, { nameOf: fullName, labelOf: (k) => CALL_TYPES[k] ?? k });
+  const csv = toCsv(rows, { nameOf: fullName, labelOf: callTypeLabel });
   const stamp = toDateInputValue(new Date());
   const name = scope === 'all' ? `se-bookings-all-${stamp}.csv` : `se-bookings-${els.logFrom.value || 'start'}-to-${els.logTo.value || stamp}.csv`;
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
@@ -678,7 +738,7 @@ function readSettingsDialog() {
   return {
     roster,
     businessHours: { start: fromTimeInputValue(els.hoursStart.value), end: fromTimeInputValue(els.hoursEnd.value) },
-    features: { availabilityToggle: els.featureAvailabilityToggle.value },
+    features: { availabilityToggle: els.featureAvailabilityToggle.value, existingMeeting: els.featureExistingMeeting.value },
   };
 }
 
@@ -687,7 +747,8 @@ async function saveSettingsFromDialog() {
   try {
     const saved = await saveSettings(readSettingsDialog());
     applySettings(saved);
-    renderMeToggle(); // the flag may have changed for this viewer; others pick it up on their next load
+    renderMeToggle(); // the flags may have changed for this viewer; others pick them up on their next load
+    renderExistingEntry();
     els.dialog.close();
     flash = { kind: 'success', text: 'Settings saved. Availability now uses the updated roster and hours.' };
     if (data) await load();
@@ -771,43 +832,39 @@ function readIntake() {
 
 // ---- HubSpot deal link ----
 
-/** Debounced: parse the link, verify the portal, look the deal up, fill the company name. */
-function onDealInput() {
-  clearTimeout(dealDebounce);
-  const url = els.dealUrl.value.trim();
-  const seq = ++dealLookupSeq;
-  setLinkedDeal(null);
-  if (!url) {
-    setDealStatus('');
-    onIntakeChange();
-    return;
-  }
-  const ref = parseDealUrl(url);
-  if (!ref) {
-    setDealStatus('Not a HubSpot deal link.', 'error');
-    onIntakeChange();
-    return;
-  }
-  if (!isExpectedPortal(ref.portalId)) {
-    setDealStatus('That link is for a different HubSpot portal.', 'error');
-    onIntakeChange();
-    return;
-  }
-  setDealStatus('Looking up the deal…');
-  onIntakeChange();
-  dealDebounce = setTimeout(async () => {
-    try {
-      const deal = await getDeal(ref.dealId);
-      if (seq !== dealLookupSeq) return; // link changed while we were fetching
-      setLinkedDeal({ ...deal, url });
-      const parts = [deal.name || `Deal ${deal.id}`, deal.stageLabel, deal.companyName].filter(Boolean);
-      setDealStatus(`✓ ${parts.join(' · ')} — correct deal?`, 'ok');
-    } catch (err) {
-      if (seq !== dealLookupSeq) return;
-      setDealStatus(err.status === 404 ? 'Deal not found in HubSpot.' : `Couldn't look up the deal (${err.message}).`, 'error');
-    }
-    onIntakeChange();
-  }, 400);
+/**
+ * A debounced deal-link handler for one input: parse the link, verify the portal, look the deal
+ * up, and hand the resolved deal (or null) to `onChange`. Two fields use it: the intake's deal
+ * link and the existing-meeting dialog's. Each handler owns its own sequence and timer.
+ * @returns {() => void} the `input` listener
+ */
+function dealLookup({ input, status, onChange, lookup }) {
+  let seq = 0;
+  let timer = null;
+  const say = (text, kind) => setFieldStatus(status, input, text, kind);
+  return () => {
+    clearTimeout(timer);
+    const url = input.value.trim();
+    const mine = ++seq;
+    onChange(null);
+    if (!url) return say('');
+    const ref = parseDealUrl(url);
+    if (!ref) return say('Not a HubSpot deal link.', 'error');
+    if (!isExpectedPortal(ref.portalId)) return say('That link is for a different HubSpot portal.', 'error');
+    say('Looking up the deal…');
+    timer = setTimeout(async () => {
+      try {
+        const deal = await (lookup ?? fixture?.getDeal ?? getDeal)(ref.dealId);
+        if (mine !== seq) return; // link changed while we were fetching
+        onChange({ ...deal, url });
+        const parts = [deal.name || `Deal ${deal.id}`, deal.stageLabel, deal.companyName].filter(Boolean);
+        say(`✓ ${parts.join(' · ')} — correct deal?`, 'ok');
+      } catch (err) {
+        if (mine !== seq) return;
+        say(err.status === 404 ? 'Deal not found in HubSpot.' : `Couldn't look up the deal (${err.message}).`, 'error');
+      }
+    }, 400);
+  };
 }
 
 /** A resolved deal supplies the company name (read-only while linked); clearing it hands the field back. */
@@ -823,10 +880,10 @@ function setLinkedDeal(deal) {
   }
 }
 
-function setDealStatus(text, kind = '') {
-  els.dealStatus.textContent = text;
-  els.dealStatus.className = `field-status${kind ? ` is-${kind}` : ''}`;
-  els.dealUrl.setAttribute('aria-invalid', String(kind === 'error'));
+function setFieldStatus(statusEl, inputEl, text, kind = '') {
+  statusEl.textContent = text;
+  statusEl.className = `field-status${kind ? ` is-${kind}` : ''}`;
+  inputEl.setAttribute('aria-invalid', String(kind === 'error'));
 }
 
 /**
@@ -834,6 +891,8 @@ function setDealStatus(text, kind = '') {
  * notice describing the outcome; a failure gets a Retry action rather than being hidden (§12).
  */
 async function attachCollaborator(deal, se, base) {
+  // Fixture mode has no HubSpot: say so instead of failing against the real client.
+  if (fixture) return { ...base, text: `${base.text} (Fixture: Deal Collaborator not written.)` };
   try {
     const ownerId = await findOwnerIdByEmail(se);
     if (!ownerId) throw new Error(`${fullName(se)} is not a user in this HubSpot portal`);
@@ -951,24 +1010,24 @@ function renderSummary(start, end) {
   const pick = pickSE(candidates, ledger);
 
   const box = el('div', { className: 'summary' });
-  box.append(row('When', `${fmtTime(start)} – ${fmtTime(end)}`));
+  box.append(summaryRow('When', `${fmtTime(start)} – ${fmtTime(end)}`));
   // §9 toggle Off: informational only, never a blocking confirm. Book stays enabled.
   if (!includeMe) box.append(el('p', { className: 'summary-note summary-me-off', textContent: "Your calendar isn't being checked for this time." }));
   // §11 (relabeled Sep 30 2026): "Assigned SE", with a line saying why the AE doesn't choose.
-  const seRow = row('Assigned SE', pick ? fullName(pick.se) : 'No SE is free for this slot');
+  const seRow = summaryRow('Assigned SE', pick ? fullName(pick.se) : 'No SE is free for this slot');
   if (pick) seRow.lastChild.append(el('span', { className: 'muted summary-help', textContent: 'Assigned automatically to balance SE workload' }));
   box.append(seRow);
   const complete = isIntakeComplete(intake);
-  box.append(row('Title', complete ? buildEventTitle(intake) : 'Complete the form above to set the title', !complete));
+  box.append(summaryRow('Title', complete ? buildEventTitle(intake) : 'Complete the form above to set the title', !complete));
   // The title may say "Multi-Product"; the description (shown to the SE) always lists the modules.
-  if (complete) box.append(row('Products', buildEventDescription(intake).replace(/^Products: /, '')));
-  if (intake.deal) box.append(row('Deal', [intake.deal.name, intake.deal.stageLabel].filter(Boolean).join(' · ')));
-  else if (intake.dealUrl) box.append(row('Deal', 'Link not resolved — no collaborator will be set', true));
+  if (complete) box.append(summaryRow('Products', buildEventDescription(intake).replace(/^Products: /, '')));
+  if (intake.deal) box.append(summaryRow('Deal', [intake.deal.name, intake.deal.stageLabel].filter(Boolean).join(' · ')));
+  else if (intake.dealUrl) box.append(summaryRow('Deal', 'Link not resolved — no collaborator will be set', true));
   const needsDeal = HUBSPOT.required && !intake.deal;
   const badProspects = intake.invalidProspects.length > 0;
-  if (badProspects) box.append(row('Prospects', `Not an email: ${intake.invalidProspects.join(', ')}`, true));
+  if (badProspects) box.append(summaryRow('Prospects', `Not an email: ${intake.invalidProspects.join(', ')}`, true));
   else if (intake.prospectEmails.length) {
-    box.append(row('Prospects', intake.prospectEmails.join(', ')));
+    box.append(summaryRow('Prospects', intake.prospectEmails.join(', ')));
     box.append(el('p', { className: 'muted summary-note', textContent: 'They get the invite when you click Book. No meeting link is attached yet — add Zoom in Google Calendar afterwards.' }));
   }
 
@@ -982,12 +1041,13 @@ function renderSummary(start, end) {
   book.addEventListener('click', () => book_(start, end, pick.se, intake));
   box.append(book);
   return box;
+}
 
-  function row(label, value, muted = false) {
-    const r = el('div', { className: 'summary-row' });
-    r.append(el('span', { className: 'summary-label', textContent: label }), el('span', { className: muted ? 'muted' : '', textContent: value }));
-    return r;
-  }
+/** One label/value line of a booking summary (the popover and the existing-meeting dialog). */
+function summaryRow(label, value, muted = false) {
+  const r = el('div', { className: 'summary-row' });
+  r.append(el('span', { className: 'summary-label', textContent: label }), el('span', { className: muted ? 'muted' : '', textContent: value }));
+  return r;
 }
 
 /**
@@ -1027,11 +1087,33 @@ async function book_(start, end, se, intake) {
     return;
   }
 
-  const when = `${new Date(start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}, ${fmtTime(start)} – ${fmtTime(end)}`;
   const n = intake.prospectEmails.length;
   const sentTo = n ? `Invites sent to ${fullName(se)} and ${n} prospect${n === 1 ? '' : 's'}.` : 'Invite sent.';
-  // Event first; then the fairness ledger and the booking log (§11: one action). Either record
-  // failing after the event exists is reported, never hidden.
+  bookingInFlight = false;
+  closePopover();
+  await finishBooking({
+    se,
+    event,
+    deal: intake.deal,
+    callType: intake.callTypeKey,
+    company: intake.companyName,
+    callAt: start,
+    callEnd: end,
+    summary,
+    sentTo,
+    meOff,
+  });
+}
+
+/**
+ * Everything after the Google write, shared by a new booking and by adding an SE to an existing
+ * meeting (§11: one action): the fairness ledger, the booking log, the Deal Collaborator step with
+ * its Retry, a reload so the SE now reads busy, and the reminder dialog. Either record failing after
+ * the event exists is reported, never hidden. Needs no Google token.
+ */
+async function finishBooking({ se, event, deal, callType, company, callAt, callEnd, summary, sentTo, meOff = false, existing = false }) {
+  const when = `${new Date(callAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}, ${fmtTime(callAt)} – ${fmtTime(callEnd)}`;
+  const verb = existing ? 'Added' : 'Booked';
   const notRecorded = [];
   try {
     ledger = await recordAssignment(se, new Date(), ledgerOpts());
@@ -1039,35 +1121,29 @@ async function book_(start, end, se, intake) {
     notRecorded.push(`the fairness ledger (${err.message})`);
   }
   try {
-    await recordBooking(
-      { ae: me, se, callType: intake.callTypeKey, company: intake.companyName, callAt: start, dealId: intake.deal?.id },
-      new Date(),
-      logOpts(),
-    );
+    await recordBooking({ ae: me, se, callType, company, callAt, dealId: deal?.id }, new Date(), logOpts());
   } catch (err) {
     notRecorded.push(`the booking log (${err.message})`);
   }
   flash = notRecorded.length
     ? {
         kind: 'warn',
-        text: `Booked: ${summary} · ${when} with ${fullName(se)} — but it could not be recorded in ${notRecorded.join(' or ')}.`,
+        text: `${verb}: ${summary} · ${when} with ${fullName(se)} — but it could not be recorded in ${notRecorded.join(' or ')}.`,
         link: { href: event.htmlLink, label: 'Open in Google Calendar' },
       }
     : {
         kind: 'success',
-        text: `Booked: ${summary} · ${when} with ${fullName(se)}. ${sentTo}`,
+        text: `${verb}: ${summary} · ${when} with ${fullName(se)}. ${sentTo}`,
         link: { href: event.htmlLink, label: 'Open in Google Calendar' },
       };
   // v2: event first, collaborator second; a failure here is reported with a Retry, never hidden.
-  if (intake.deal) flash = await attachCollaborator(intake.deal, se, flash);
+  if (deal) flash = await attachCollaborator(deal, se, flash);
   // A clean booking is confirmed by the reminder dialog alone (it carries the event link). The
   // notice above the grid is kept only for partial failures, since those need to outlive the dialog
   // (ledger not recorded, or the Deal Collaborator step with its Retry).
   if (flash?.kind === 'success') flash = null;
-  bookingInFlight = false;
-  closePopover();
-  await load(); // the new event now shows as busy time
-  showBookedDialog({ summary, when, se, event, deal: intake.deal, meOff });
+  await load(); // the new (or newly staffed) event now shows the SE as busy
+  showBookedDialog({ summary, when, se, event, deal, meOff, existing });
 }
 
 /**
@@ -1075,9 +1151,15 @@ async function book_(start, end, se, intake) {
  * call notes on the HubSpot deal record, and the Zoom link on the calendar event (until Zoom is
  * automated). Links go straight to the deal (when one was linked) and to the event.
  */
-function showBookedDialog({ summary, when, se, event, deal, meOff = false }) {
+function showBookedDialog({ summary, when, se, event, deal, meOff = false, existing = false }) {
   els.bookedSummary.textContent = `${summary} · ${when} · with ${fullName(se)}`;
   els.bookedMeOff.hidden = !meOff;
+  // Set every string on every call: the dialog is shared by both paths.
+  els.bookedTitle.textContent = existing ? 'SE added ✓' : 'Booked ✓';
+  els.bookedStep2Title.textContent = existing ? 'Review the updated event.' : 'Add the Zoom link to the calendar event.';
+  els.bookedStep2Note.textContent = existing
+    ? `${firstName(se)} received an invite and everyone else an updated invitation. The meeting link is whatever was already on the event.`
+    : 'The invite went out without a meeting link.';
   els.bookedOpenEvent.href = event.htmlLink;
   if (deal?.url) {
     els.bookedOpenDeal.href = deal.url;
@@ -1088,6 +1170,189 @@ function showBookedDialog({ summary, when, se, event, deal, meOff = false }) {
   }
   els.bookedDialog.showModal();
   els.bookedDone.focus();
+}
+
+// ---- Add an SE to an existing meeting (Project Plan §9, from backlog #12) ----
+// The AE picks one of their OWN events for the visible week; the SE free for exactly that slot with
+// the fewest recent assignments is added as an attendee. Only the attendee list changes. The deal
+// link is required so the SE becomes Deal Collaborator. The event list is read on request and
+// lives in `existing` until the dialog closes; nothing is stored.
+
+const fmtWhen = (start, end) =>
+  `${new Date(start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} · ${fmtTime(start)} – ${fmtTime(end)}`;
+
+const rosterEmails = () => settings.roster.map((se) => se.email);
+
+async function openExistingPicker() {
+  if (!accessToken || !data) return;
+  existing = { events: [], selected: null, deal: null, pick: null, unreadable: [], inFlight: false };
+  els.existingIntro.textContent = `Your meetings for ${els.weekLabel.textContent}, read from your calendar just now and never stored. Pick the prospect call.`;
+  els.existingList.replaceChildren(el('p', { className: 'muted', textContent: 'Loading your meetings…' }));
+  els.existingDetails.hidden = true;
+  els.existingSummary.replaceChildren();
+  els.existingErrors.replaceChildren();
+  els.existingDealUrl.value = '';
+  setFieldStatus(els.existingDealStatus, els.existingDealUrl, '');
+  els.existingAdd.disabled = true;
+  els.existingDialog.showModal();
+  try {
+    const list = fixture?.listEvents ?? listEvents;
+    // The same range the FreeBusy fetch used, so data.calendars covers every event listed.
+    const items = await list(accessToken, { timeMin: data.timeMin, timeMax: data.weekEnd });
+    if (!existing) return; // closed while loading
+    existing.events = pickableEvents(items, { now: Date.now(), me, roster: rosterEmails() });
+    renderExistingList();
+  } catch (err) {
+    if (err.status === 401) {
+      clearToken();
+      els.existingDialog.close();
+      setNotices([{ kind: 'warn', text: 'Your Google session expired. Reconnect to list your meetings.' }]);
+      return;
+    }
+    const text =
+      err.status === 403
+        ? "Google wouldn't allow reading your calendar events (403). Reconnect to re-consent, or book a new time from the grid."
+        : `Couldn't list your meetings: ${err.message}`;
+    els.existingList.replaceChildren(el('p', { className: 'error', textContent: text }));
+  }
+}
+
+function renderExistingList() {
+  const { events, selected } = existing;
+  if (!events.length) {
+    els.existingList.replaceChildren(
+      el('p', { className: 'muted', textContent: 'No upcoming meetings on your calendar this week. Navigate to the right week, or book a new time from the grid.' }),
+    );
+    return;
+  }
+  els.existingList.replaceChildren(
+    ...events.map((ev) => {
+      const b = el('button', { className: 'event-row', type: 'button', role: 'option' });
+      b.setAttribute('aria-pressed', String(ev === selected));
+      b.append(el('span', { className: 'event-when', textContent: fmtWhen(ev.start, ev.end) }), el('span', { className: 'event-title', textContent: ev.title }));
+      let why = null;
+      if (ev.seOnEvent) why = `${firstName(ev.seOnEvent)} is already on this meeting`;
+      else if (!ev.organizerIsMe && !ev.guestsCanInviteOthers) why = 'Only the organizer can add guests';
+      if (why) {
+        b.disabled = true;
+        b.append(el('span', { className: 'muted', textContent: `· ${why}` }));
+      } else {
+        b.addEventListener('click', () => selectExistingEvent(ev));
+      }
+      return b;
+    }),
+  );
+}
+
+function selectExistingEvent(ev) {
+  existing.selected = ev;
+  const { free, unreadable } = sesForEvent(ev, data.calendars, rosterEmails(), me);
+  existing.pick = pickSE(free, ledger);
+  existing.unreadable = unreadable;
+  renderExistingList();
+  els.existingDetails.hidden = false;
+  // The intake's resolved deal is usually the same deal: offer it, but keep the dialog's own state.
+  if (!els.existingDealUrl.value && linkedDeal?.url) {
+    els.existingDealUrl.value = linkedDeal.url;
+    existing.deal = linkedDeal;
+    const parts = [linkedDeal.name || `Deal ${linkedDeal.id}`, linkedDeal.stageLabel, linkedDeal.companyName].filter(Boolean);
+    setFieldStatus(els.existingDealStatus, els.existingDealUrl, `✓ ${parts.join(' · ')} — correct deal?`, 'ok');
+  }
+  renderExistingSummary();
+  if (!existing.deal) els.existingDealUrl.focus();
+}
+
+/** Company recorded in the booking log for this flow: from the deal, never typed. */
+const dealCompany = (deal) => deal.companyName || deal.name || `Deal ${deal.id}`;
+
+function renderExistingSummary() {
+  const { selected: ev, pick, deal, unreadable, inFlight } = existing;
+  if (!ev) return;
+  const box = el('div');
+  box.append(summaryRow('When', fmtWhen(ev.start, ev.end)));
+  const titleRow = summaryRow('Title', ev.title);
+  titleRow.lastChild.append(
+    el('span', { className: 'muted summary-help', textContent: ev.recurringEventId ? 'This occurrence only. Title and description are left as they are.' : 'Title and description are left as they are.' }),
+  );
+  box.append(titleRow);
+  const seRow = summaryRow('Assigned SE', pick ? fullName(pick.se) : 'No SE is free for this time');
+  if (pick) seRow.lastChild.append(el('span', { className: 'muted summary-help', textContent: 'Assigned automatically to balance SE workload' }));
+  box.append(seRow);
+  if (!pick) {
+    // The dead end (§9): a plain stop. The Slack flex request (backlog #8) is not built.
+    box.append(el('p', { className: 'muted summary-note', textContent: 'Every SE has something at this time. Ask in Slack whether one can move it, or pick a new time from the grid.' }));
+  }
+  if (unreadable.length) {
+    box.append(el('p', { className: 'muted summary-note', textContent: `Couldn't check ${unreadable.map(fullName).join(' or ')} — their calendar may not share free/busy.` }));
+  }
+  if (deal) {
+    box.append(summaryRow('Deal', [deal.name, deal.stageLabel].filter(Boolean).join(' · ')));
+    box.append(summaryRow('Company', dealCompany(deal)));
+  } else {
+    box.append(summaryRow('Deal', 'Paste the deal link above (required for this flow)', true));
+  }
+  if (pick) {
+    box.append(el('p', { className: 'muted summary-note', textContent: `${firstName(pick.se)} gets an invite; everyone already on the event gets Google's updated invitation.` }));
+  }
+  els.existingSummary.replaceChildren(...box.childNodes);
+
+  const canAdd = Boolean(pick && deal && !inFlight);
+  els.existingAdd.disabled = !canAdd;
+  els.existingAdd.textContent = inFlight ? 'Adding…' : 'Add SE';
+  if (!pick) els.existingAdd.title = 'No SE is free for this time';
+  else if (!deal) els.existingAdd.title = 'Link a HubSpot deal to add the SE';
+  else els.existingAdd.title = '';
+}
+
+/** Google write first (attendees only), then the shared ledger → log → collaborator → dialog tail. */
+async function addToExisting_() {
+  if (!existing?.selected || !existing.pick || !existing.deal || existing.inFlight) return;
+  existing.inFlight = true;
+  els.existingErrors.replaceChildren();
+  renderExistingSummary();
+  const ev = existing.selected;
+  const se = existing.pick.se;
+  const deal = existing.deal;
+  let event;
+  try {
+    const attendees = mergeAttendees(ev.attendees, se, { organizer: ev.organizerIsMe ? me : undefined });
+    const patch = fixture?.patchAttendees ?? patchAttendees;
+    event = await patch(accessToken, ev.id, attendees);
+  } catch (err) {
+    if (!existing) return; // closed meanwhile
+    existing.inFlight = false;
+    if (err.status === 401) {
+      clearToken();
+      els.existingDialog.close();
+      setNotices([{ kind: 'warn', text: 'Your Google session expired before the SE was added. Reconnect and try again.' }]);
+      return;
+    }
+    let text;
+    if (err.status === 403) {
+      text = `Google wouldn't let you change this event. This happens when you're a guest and the organizer hasn't allowed guests to invite others — ask the organizer to add ${fullName(se)}, or book a new time from the grid.`;
+    } else if (err.status === 404 || err.status === 410) {
+      text = 'That event is no longer on your calendar. Close and reopen the list.';
+    } else {
+      text = `${err.message} Nothing was changed.`;
+    }
+    els.existingErrors.replaceChildren(el('div', { textContent: text }));
+    renderExistingSummary();
+    return;
+  }
+  existing.inFlight = false;
+  els.existingDialog.close();
+  await finishBooking({
+    se,
+    event: { id: event.id, htmlLink: event.htmlLink || ev.htmlLink },
+    deal,
+    callType: EXISTING_MEETING_TYPE,
+    company: dealCompany(deal),
+    callAt: ev.start,
+    callEnd: ev.end,
+    summary: ev.title,
+    sentTo: `Invite sent to ${fullName(se)}; everyone on the event got an updated invitation.`,
+    existing: true,
+  });
 }
 
 /** Place the popover beside the clicked block, flipping left when it would overflow the grid. */

@@ -41,6 +41,13 @@ Hosted on Osano's Archie platform. Pilot URL: https://creinhardt.archie.osano.de
   the booked dialog.
   Behind a feature flag: **Settings → Features** sets it to Off for everyone, Admins only (the default,
   a quiet pilot), or Everyone, with no redeploy.
+- **Add an SE to an existing meeting.** Already have the prospect call on your calendar (a HubSpot
+  meeting link, say)? "Add an SE to it" under the intake form lists your own meetings for the visible
+  week, read from your calendar on the spot and never stored. Pick the call, paste the deal link
+  (required: the SE becomes Deal Collaborator), and the free SE with the fewest recent bookings is
+  added to that event. Only the attendee list changes; the SE gets an invite and everyone already on
+  the event gets Google's updated invitation. Recorded in the ledger and the booking log (type
+  "Existing meeting"). Behind its own feature flag, Admins only by default.
 - Light and dark mode.
 
 ## How it works
@@ -61,8 +68,10 @@ Grid ──► click ──► start-time chips ──► fairness pick ──�
 
 Key properties, all from the Project Plan:
 
-- **Free/busy only.** The app never reads event titles, attendees, or descriptions. The only
-  write is creating its own bookings.
+- **Free/busy only for SEs.** The app never reads an SE's event titles, attendees, or
+  descriptions. The one event read is the AE's own week of meetings, on request, when they use
+  "Add an SE to it"; it lives in browser memory while that list is open and is never stored. The
+  only writes are creating its own bookings and adding the SE to a meeting the AE chose.
 - **Per-user consent.** Each AE authorises the app once with their own Google account. No
   shared credential exists anywhere. Tokens live in memory, renew silently, and are never stored.
 - **Nothing calendar-related is persisted.** The Archie config store holds only the SE roster,
@@ -79,7 +88,8 @@ src/
     config.js         Client ID, scopes, default roster/hours, admin allow-list
     auth.js           Google token client (silent renewal) + Archie identity
     freebusy.js       FreeBusy API call
-    events.js         Calendar event creation
+    events.js         Calendar event creation; the AE's own event list + attendee patch (add-SE flow)
+    existing.js       add an SE to an existing meeting: pickable events, per-SE slot check, attendee merge
     intervals.js      merge / subtract / intersect interval math
     businessDays.js   week bounds, business-hour windows
     availability.js   busy → free → merged offerable blocks, per-SE free intervals
@@ -128,6 +138,13 @@ Book into a no-op that creates nothing, and keeps its bookings in a separate led
 so. Remove the parameter for live data. Scenarios are defined in `src/dev/fixtures.js`, which is
 excluded from the Archie zip; navigate to a week that isn't mostly in the past to see all of them.
 
+Fixture mode is also the quickest way to see the **My availability** switch work: the fixture AE has a
+12–1 lunch every day, so switching Off opens that hour on Thursday and Friday. And it feeds
+**Add an SE to it** a synthetic week of the fixture AE's own meetings, one per rule (an SE already
+attending, a guest-only event, an all-day block, a focus-time block, a recurring instance, a slot
+nobody can take, an early-morning slot outside business hours), and accepts any parseable deal link
+without the HubSpot proxy. Adding creates nothing.
+
 Fixture mode also reseeds the **booking log** with 26 dummy entries on every boot (its own key,
 `log:fixture`, so real localhost data is untouched): spread over the last 60 days so the 30-day
 default and the full-history export differ, several AEs and both SEs, every call type, company
@@ -144,7 +161,7 @@ All in `src/lib/config.js`:
 | `SCOPE` | `calendar.events.freebusy` (read free/busy) + `calendar.events` (create bookings). |
 | `SE_ROSTER`, `BUSINESS_HOURS` | Seed values; the live ones are edited in the app's Settings panel. |
 | `ADMIN_EMAILS` | Who sees the Settings panel. A UI gate, not a security boundary. |
-| `FEATURES` | Seed for the feature flags (`off` / `admins` / `all` per feature). Live values are edited in Settings → Features. |
+| `FEATURES` | Seed for the feature flags (`off` / `admins` / `all` per feature): `availabilityToggle`, `existingMeeting`. Live values are edited in Settings → Features. |
 | `DEV_EMAIL` | Identity used on localhost. |
 | `DURATION_OPTIONS` | 30 / 45 / 60 minutes. |
 
